@@ -1,0 +1,21 @@
+{
+  "api_name": "telegram",
+  "base_url": "",
+  "description": "Every Telegram account you own in one terminal: unified sync and search, flood-aware cross-account broadcasts, and a schema-driven raw gateway no other Telegram CLI offers.",
+  "mcp_ready": "full",
+  "http_transport": "standard",
+  "auth": {
+    "type": "none"
+  },
+  "required_headers": [],
+  "tools": [
+    {
+      "name": "mirror_status",
+      "description": "Show local mirror stats: per-account message counts, chats, db size, sync age. Returns the MirrorStatus.",
+      "method": "GET",
+      "path": "/mirror/status",
+      "no_auth": true,
+      "params": []
+    }
+  ]
+}
