@@ -11,9 +11,9 @@ import (
 
 func newMirrorPromotedCmd(flags *rootFlags) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:         "mirror",
-		Short:       "Show local mirror stats: per-account message counts, chats, db size, sync age",
-		Example:     `  tele mirror
+		Use:   "mirror",
+		Short: "Show local mirror stats: per-account message counts, chats, db size, sync age",
+		Example: `  tele mirror
   tele mirror --json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			home, err := config.HomeDir(flags.homePath)

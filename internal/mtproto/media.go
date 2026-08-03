@@ -95,8 +95,8 @@ func UploadAndSendMedia(ctx context.Context, api *tg.Client, peer tg.InputPeerCl
 			FileName: filepath.Base(filePath),
 		})
 		inputMedia = &tg.InputMediaUploadedDocument{
-			File:     inputFile,
-			MimeType: mimeFromExt(ext),
+			File:       inputFile,
+			MimeType:   mimeFromExt(ext),
 			Attributes: attrs,
 		}
 	}
@@ -145,5 +145,3 @@ func mimeFromExt(ext string) string {
 		return "application/octet-stream"
 	}
 }
-
-

@@ -11,13 +11,14 @@ import (
 
 // DialogItem is a simplified dialog record for output.
 type DialogItem struct {
-	PeerType  string `json:"peer_type"`
-	PeerID    int64  `json:"peer_id"`
-	Title     string `json:"title"`
-	Username  string `json:"username"`
-	Unread    int    `json:"unread_count"`
-	LastMsgID int64  `json:"last_msg_id"`
-	Pinned    bool   `json:"pinned"`
+	PeerType   string `json:"peer_type"`
+	PeerID     int64  `json:"peer_id"`
+	Title      string `json:"title"`
+	Username   string `json:"username"`
+	Unread     int    `json:"unread_count"`
+	LastMsgID  int64  `json:"last_msg_id"`
+	Pinned     bool   `json:"pinned"`
+	AccessHash int64  `json:"access_hash,omitempty"`
 }
 
 // MessageItem is a simplified message record for output.
@@ -85,7 +86,7 @@ func ForwardMessages(ctx context.Context, api *tg.Client, fromPeer, toPeer tg.In
 	}
 	resp, err := api.MessagesForwardMessages(ctx, &tg.MessagesForwardMessagesRequest{
 		FromPeer: fromPeer,
-		ID:      intSliceFromInt64(msgIDs),
+		ID:       intSliceFromInt64(msgIDs),
 		ToPeer:   toPeer,
 		RandomID: rnds,
 	})
@@ -98,8 +99,8 @@ func ForwardMessages(ctx context.Context, api *tg.Client, fromPeer, toPeer tg.In
 // DeleteMessages deletes messages (optionally from both sides).
 func DeleteMessages(ctx context.Context, api *tg.Client, msgIDs []int64, revoke bool) error {
 	_, err := api.MessagesDeleteMessages(ctx, &tg.MessagesDeleteMessagesRequest{
-		ID:      intSliceFromInt64(msgIDs),
-		Revoke:  revoke,
+		ID:     intSliceFromInt64(msgIDs),
+		Revoke: revoke,
 	})
 	return err
 }
@@ -139,8 +140,10 @@ func SearchMessages(ctx context.Context, api *tg.Client, query string, limit int
 		limit = 30
 	}
 	resp, err := api.MessagesSearch(ctx, &tg.MessagesSearchRequest{
-		Q:     query,
-		Limit: limit,
+		Q:      query,
+		Peer:   &tg.InputPeerEmpty{}, // InputPeerEmpty = global search across all chats
+		Filter: &tg.InputMessagesFilterEmpty{},
+		Limit:  limit,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("search messages: %w", err)
@@ -192,23 +195,58 @@ type RawInvoker interface {
 	InvokeRawJSON(ctx context.Context, jsonRequest string) (jsonResponse string, err error)
 }
 
+// HistoryFromResponse extracts MessageItems from a MessagesGetHistory response.
+func HistoryFromResponse(resp tg.MessagesMessagesClass) ([]MessageItem, error) {
+	return extractMessages(resp)
+}
+
+// ResolveUsernameLive resolves an @username against the live session via
+// contacts.resolveUsername and returns the matching InputPeerClass. Use it to
+// wire a PeerResolver.Live fallback inside DialAndRun.
+func ResolveUsernameLive(ctx context.Context, api *tg.Client, username string) (tg.InputPeerClass, error) {
+	res, err := api.ContactsResolveUsername(ctx, &tg.ContactsResolveUsernameRequest{Username: username})
+	if err != nil {
+		return nil, fmt.Errorf("resolve username @%s: %w", username, err)
+	}
+	switch p := res.Peer.(type) {
+	case *tg.PeerUser:
+		for _, c := range res.Users {
+			if u, ok := c.(*tg.User); ok && u.ID == p.UserID {
+				return &tg.InputPeerUser{UserID: u.ID, AccessHash: u.AccessHash}, nil
+			}
+		}
+		return &tg.InputPeerUser{UserID: p.UserID}, nil
+	case *tg.PeerChat:
+		return &tg.InputPeerChat{ChatID: p.ChatID}, nil
+	case *tg.PeerChannel:
+		for _, c := range res.Chats {
+			if ch, ok := c.(*tg.Channel); ok && ch.ID == p.ChannelID {
+				return &tg.InputPeerChannel{ChannelID: ch.ID, AccessHash: ch.AccessHash}, nil
+			}
+		}
+		return &tg.InputPeerChannel{ChannelID: p.ChannelID}, nil
+	default:
+		return nil, fmt.Errorf("unexpected resolved peer type %T", res.Peer)
+	}
+}
+
 // --- Helper extractors ---
 
 func extractDialogs(resp tg.MessagesDialogsClass) ([]DialogItem, error) {
 	var items []DialogItem
 	var users []*tg.User
-	var chats []*tg.Chat
+	var chats []tg.ChatClass
 	var dialogs []tg.DialogClass
 
 	switch r := resp.(type) {
 	case *tg.MessagesDialogsSlice:
 		dialogs = r.Dialogs
 		users = usersFromClasses(r.Users)
-		chats = chatsFromClasses(r.Chats)
+		chats = r.Chats
 	case *tg.MessagesDialogs:
 		dialogs = r.Dialogs
 		users = usersFromClasses(r.Users)
-		chats = chatsFromClasses(r.Chats)
+		chats = r.Chats
 	default:
 		return nil, fmt.Errorf("unsupported dialog response: %T", resp)
 	}
@@ -219,13 +257,14 @@ func extractDialogs(resp tg.MessagesDialogsClass) ([]DialogItem, error) {
 		}
 		peer := resolvePeerFromDialog(dialog, users, chats)
 		items = append(items, DialogItem{
-			PeerType:  peer.peerType,
-			PeerID:    peer.peerID,
-			Title:     peer.title,
-			Username:  peer.username,
-			Unread:    dialog.UnreadCount,
-			LastMsgID: int64(dialog.TopMessage),
-			Pinned:    dialog.Pinned,
+			PeerType:   peer.peerType,
+			PeerID:     peer.peerID,
+			Title:      peer.title,
+			Username:   peer.username,
+			Unread:     dialog.UnreadCount,
+			LastMsgID:  int64(dialog.TopMessage),
+			Pinned:     dialog.Pinned,
+			AccessHash: peer.accessHash,
 		})
 	}
 	return items, nil
@@ -335,13 +374,14 @@ func extractUpdatesMessageIDs(resp tg.UpdatesClass) ([]int64, error) {
 
 // peerInfo is used to resolve user/channel info from a dialog.
 type peerInfo struct {
-	peerType string
-	peerID   int64
-	title    string
-	username string
+	peerType   string
+	peerID     int64
+	title      string
+	username   string
+	accessHash int64
 }
 
-func resolvePeerFromDialog(d *tg.Dialog, users []*tg.User, chats []*tg.Chat) peerInfo {
+func resolvePeerFromDialog(d *tg.Dialog, users []*tg.User, chats []tg.ChatClass) peerInfo {
 	peer := d.Peer
 	switch p := peer.(type) {
 	case *tg.PeerUser:
@@ -351,26 +391,26 @@ func resolvePeerFromDialog(d *tg.Dialog, users []*tg.User, chats []*tg.Chat) pee
 				if name == "" {
 					name = strings.TrimSpace(u.FirstName + " " + u.LastName)
 				}
-				return peerInfo{"user", u.ID, name, u.Username}
+				return peerInfo{"user", u.ID, name, u.Username, u.AccessHash}
 			}
 		}
-		return peerInfo{"user", p.UserID, fmt.Sprintf("user_%d", p.UserID), ""}
+		return peerInfo{"user", p.UserID, fmt.Sprintf("user_%d", p.UserID), "", 0}
 	case *tg.PeerChat:
 		for _, c := range chats {
-			if c.ID == p.ChatID {
-				return peerInfo{"chat", c.ID, c.Title, ""}
+			if ch, ok := c.(*tg.Chat); ok && ch.ID == p.ChatID {
+				return peerInfo{"chat", ch.ID, ch.Title, "", 0}
 			}
 		}
-		return peerInfo{"chat", p.ChatID, fmt.Sprintf("chat_%d", p.ChatID), ""}
+		return peerInfo{"chat", p.ChatID, fmt.Sprintf("chat_%d", p.ChatID), "", 0}
 	case *tg.PeerChannel:
 		for _, c := range chats {
-			if c.ID == p.ChannelID {
-				return peerInfo{"channel", c.ID, c.Title, ""}
+			if ch, ok := c.(*tg.Channel); ok && ch.ID == p.ChannelID {
+				return peerInfo{"channel", ch.ID, ch.Title, "", ch.AccessHash}
 			}
 		}
-		return peerInfo{"channel", p.ChannelID, fmt.Sprintf("channel_%d", p.ChannelID), ""}
+		return peerInfo{"channel", p.ChannelID, fmt.Sprintf("channel_%d", p.ChannelID), "", 0}
 	}
-	return peerInfo{"unknown", 0, "unknown", ""}
+	return peerInfo{"unknown", 0, "unknown", "", 0}
 }
 
 func usersByID(users []tg.UserClass) map[int64]*tg.User {

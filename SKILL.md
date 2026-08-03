@@ -1,5 +1,5 @@
 ---
-name: pp-telegram
+name: telegram-cli
 description: "Every Telegram account you own in one terminal: unified sync and search, flood-aware cross-account broadcasts, and a schema-driven raw gateway no other Telegram CLI offers. Trigger phrases: `check my telegram unread`, `schedule this telegram post for tomorrow`, `post this to all my telegram channels`, `search my telegram messages`, `list my telegram chats`, `which of my telegram accounts are healthy`, `run the telegram daemon for 10 minutes and report`, `use telegram`, `run telegram cli`."
 author: "qmahyar"
 license: "Apache-2.0"
@@ -9,35 +9,35 @@ metadata:
   openclaw:
     requires:
       bins:
-        - telegram-pp-cli
+        - telegram-cli
     install:
       - kind: go
-        bins: [telegram-pp-cli]
-        module: github.com/mvanhorn/printing-press-library/library/social-and-messaging/telegram/cmd/telegram-pp-cli
+        bins: [telegram-cli]
+        module: telegram-cli/cmd/telegram-cli
 ---
 
-# Telegram — Printing Press CLI
+# Telegram — CLI
 
 ## Prerequisites: Install the CLI
 
-This skill drives the `telegram-pp-cli` binary. **You must verify the CLI is installed before invoking any command from this skill.** If it is missing, install it first:
+This skill drives the `telegram-cli` binary. **You must verify the CLI is installed before invoking any command from this skill.** If it is missing, install it first:
 
-1. Install via the Printing Press installer. It defaults binaries to `$HOME/.local/bin` on macOS/Linux and `%LOCALAPPDATA%\Programs\PrintingPress\bin` on Windows:
+1. Build from the repository source (requires Go 1.26.5 or newer):
    ```bash
-   npx -y @mvanhorn/printing-press-library install telegram --cli-only
+   go build -o bin/telegram-cli ./cmd/telegram-cli
    ```
-2. Verify: `telegram-pp-cli --version`
+2. Verify: `telegram-cli --version`
 3. Ensure the reported install directory is on `$PATH` for the agent/runtime that will invoke this skill.
 
-If the `npx` install fails (no Node, offline, etc.), fall back to a direct Go install (requires Go 1.26.5 or newer). This installs into `$GOPATH/bin` (default `$HOME/go/bin`), so add that directory to `$PATH` instead:
+To install into `$GOPATH/bin` (default `$HOME/go/bin`) instead, add that directory to `$PATH`:
 
 ```bash
-go install github.com/mvanhorn/printing-press-library/library/social-and-messaging/telegram/cmd/telegram-pp-cli@latest
+go install ./cmd/telegram-cli
 ```
 
 If `--version` reports "command not found" after install, the runtime cannot see the binary directory on `$PATH`. Do not proceed with skill commands until verification succeeds.
 
-telegram-pp-cli speaks MTProto as a real user across all your accounts at once. Sync every account into one local database, search it offline, then coordinate broadcasts, downloads, and triage across the whole fleet with protocol-aware flood protection. When Telegram ships new capabilities, the TL-layer registry and raw invoke gateway have you covered before any command is added.
+telegram-cli speaks MTProto as a real user across all your accounts at once. Sync every account into one local database, search it offline, then coordinate broadcasts, downloads, and triage across the whole fleet with protocol-aware flood protection. When Telegram ships new capabilities, the TL-layer registry and raw invoke gateway have you covered before any command is added.
 
 ## When to Use This CLI
 
@@ -63,21 +63,21 @@ These capabilities aren't available in any other tool for this API.
   _When an agent must deliver the same announcement to many chats across several accounts safely, this is the only one-shot path that handles pacing, retries, and failure reporting._
 
   ```bash
-  telegram-pp-cli broadcast "Release v2.1 is out" --chats @mychannel,@updates --account work --dry-run --json
+  telegram-cli broadcast "Release v2.1 is out" --chats @mychannel,@updates --account work --dry-run --json
   ```
 - **`batch`** — Fan out forward, media download, mark-read, or raw MTProto method calls across accounts and chats as one resumable, audited job — optionally at a scheduled time.
 
   _When bulk-downloading or bulk-forwarding across several accounts, the job survives interruptions and reports exactly what succeeded per account._
 
   ```bash
-  telegram-pp-cli batch download --chat @releases --limit 20 --account work --dry-run --json
+  telegram-cli batch download --chat @releases --limit 20 --account work --dry-run --json
   ```
 - **`jobs`** — Queue any broadcast or batch operation for a future time; jobs persist across restarts and fire via the scheduler loop or one-shot OS tasks.
 
   _When an agent must time posts or batch runs without keeping a terminal open, this is the safe, inspectable queue — 'jobs list' shows pending work, 'jobs cancel' aborts it._
 
   ```bash
-  telegram-pp-cli broadcast "Weekly report" --chats @team --account work --at 2026-08-04T09:00 --dry-run --json
+  telegram-cli broadcast "Weekly report" --chats @team --account work --at 2026-08-04T09:00 --dry-run --json
   ```
 
 ### Fleet awareness
@@ -87,28 +87,28 @@ These capabilities aren't available in any other tool for this API.
   _Before any batch operation, an agent should verify which accounts are healthy and which are cooling down; this returns that in one structured call._
 
   ```bash
-  telegram-pp-cli accounts health --probe --json
+  telegram-cli accounts health --probe --json
   ```
 - **`inbox`** — One unread view across every Telegram account you own, ranked by urgency, instead of opening each account separately.
 
   _For triage across a fleet of accounts, one call replaces N session logins and manual comparison._
 
   ```bash
-  telegram-pp-cli inbox --accounts all --agent
+  telegram-cli inbox --accounts all --agent
   ```
 - **`daemon run`** — Run a bounded multi-account daemon: hold live sessions, collect updates into the mirror, fire due scheduled jobs, and exit with a structured report of everything observed.
 
   _When an agent needs live Telegram activity for a bounded window — collect for 10 minutes, then report — this returns counts, notable events, and fired jobs in one structured envelope._
 
   ```bash
-  telegram-pp-cli daemon run --duration 10m --accounts all --collect messages,edits,deletes --report --json
+  telegram-cli daemon run --duration 10m --accounts all --collect messages,edits,deletes --report --json
   ```
 - **`since`** — Everything new across all your accounts since a point in time, grouped by account and chat.
 
   _For shift handoffs or morning catch-up, one call replaces scrolling every account._
 
   ```bash
-  telegram-pp-cli since 1d --accounts all --json
+  telegram-cli since 1d --accounts all --json
   ```
 
 ### Local mirror intelligence
@@ -118,14 +118,14 @@ These capabilities aren't available in any other tool for this API.
   _For archive analysis and community health checks, this answers questions the Telegram API itself cannot aggregate._
 
   ```bash
-  telegram-pp-cli stats --days 30 --account work --json
+  telegram-cli stats --days 30 --account work --json
   ```
 - **`digest`** — A mechanical weekly digest of your Telegram activity: volume per account and chat, busiest hours, top terms.
 
   _For weekly reviews, gives agents a compact structured summary without any LLM dependency._
 
   ```bash
-  telegram-pp-cli digest --days 7 --json
+  telegram-cli digest --days 7 --json
   ```
 
 ### Schema-driven extensibility
@@ -135,14 +135,14 @@ These capabilities aren't available in any other tool for this API.
   _Before relying on a new Telegram feature, an agent can verify the installed CLI actually supports the required layer._
 
   ```bash
-  telegram-pp-cli schema check --json
+  telegram-cli schema check --json
   ```
 
 ## Command Reference
 
 **mirror** — Local SQLite mirror of synced Telegram data
 
-- `telegram-pp-cli mirror` — Show local mirror stats: per-account message counts, chats, db size, sync age
+- `telegram-cli mirror` — Show local mirror stats: per-account message counts, chats, db size, sync age
 
 
 ### Finding the right command
@@ -150,7 +150,7 @@ These capabilities aren't available in any other tool for this API.
 When you know what you want to do but not which command does it, ask the CLI directly:
 
 ```bash
-telegram-pp-cli which "<capability in your own words>"
+telegram-cli which "<capability in your own words>"
 ```
 
 `which` resolves a natural-language capability query to the best matching command from this CLI's curated feature index. Exit code `0` means at least one match; exit code `2` means no confident match — fall back to `--help` or use a narrower query.
@@ -161,7 +161,7 @@ telegram-pp-cli which "<capability in your own words>"
 ### Pre-flight before any batch run
 
 ```bash
-telegram-pp-cli accounts health --probe --json
+telegram-cli accounts health --probe --json
 ```
 
 Confirms every account is authenticated and out of cooldown before fan-out.
@@ -169,7 +169,7 @@ Confirms every account is authenticated and out of cooldown before fan-out.
 ### Broadcast to all accounts safely
 
 ```bash
-telegram-pp-cli broadcast "Maintenance window tonight 02:00 UTC" --accounts all --chats @ops,@status --dry-run --json
+telegram-cli broadcast "Maintenance window tonight 02:00 UTC" --accounts all --chats @ops,@status --dry-run --json
 ```
 
 Previews the full fan-out plan; rerun without --dry-run to send.
@@ -177,7 +177,7 @@ Previews the full fan-out plan; rerun without --dry-run to send.
 ### Agent triage with minimal context
 
 ```bash
-telegram-pp-cli inbox --agent --select account,chat,unread
+telegram-cli inbox --agent --select account,chat,unread
 ```
 
 Returns only the fields an agent needs, keeping deep dialog payloads out of context.
@@ -185,7 +185,7 @@ Returns only the fields an agent needs, keeping deep dialog payloads out of cont
 ### Search the archive
 
 ```bash
-telegram-pp-cli search "kubernetes outage" --json --limit 20
+telegram-cli search "kubernetes outage" --json --limit 20
 ```
 
 FTS over every synced account; add --account or --chat to narrow.
@@ -193,16 +193,16 @@ FTS over every synced account; add --account or --chat to narrow.
 ### Catch up after time away
 
 ```bash
-telegram-pp-cli since 1d --accounts all --json
+telegram-cli since 1d --accounts all --json
 ```
 
 Fleet-wide delta of the last 24 hours grouped by account and chat.
 
 ## Auth Setup
 
-Create app credentials once at https://my.telegram.org/apps, then export TELEGRAM_API_ID and TELEGRAM_API_HASH. Add each account with 'telegram-pp-cli accounts add <alias>' — a QR code renders in the terminal (scan with Telegram → Settings → Devices → Link Desktop Device), or use --phone for code login with 2FA fallback. Sessions are stored as per-account files in the config directory with restrictive permissions; never commit or share them. Accounts logged in via unofficial clients are monitored by Telegram under its API Terms of Service — this CLI paces itself and refuses spam-shaped defaults, but abusive use can still get accounts banned.
+Create app credentials once at https://my.telegram.org/apps, then export TELEGRAM_API_ID and TELEGRAM_API_HASH. Add each account with 'telegram-cli accounts add <alias>' — a QR code renders in the terminal (scan with Telegram → Settings → Devices → Link Desktop Device), or use --phone for code login with 2FA fallback. Sessions are stored as per-account files in the config directory with restrictive permissions; never commit or share them. Accounts logged in via unofficial clients are monitored by Telegram under its API Terms of Service — this CLI paces itself and refuses spam-shaped defaults, but abusive use can still get accounts banned.
 
-Run `telegram-pp-cli doctor` to verify setup.
+Run `telegram-cli doctor` to verify setup.
 
 ## Agent Mode
 
@@ -212,7 +212,7 @@ Add `--agent` to any command. Expands to: `--json --compact --no-input --no-colo
 - **Filterable** — `--select` keeps a subset of fields. Dotted paths descend into nested structures; arrays traverse element-wise. Critical for keeping context small on verbose APIs:
 
   ```bash
-  telegram-pp-cli mirror --agent --select id,name,status
+  telegram-cli mirror --agent --select id,name,status
   ```
 - **Previewable** — `--dry-run` shows the request without sending
 - **Offline-friendly** — sync/search commands can use the local SQLite store when available
@@ -241,14 +241,14 @@ Agents should treat the CLI's path resolver as part of the runtime contract:
 - Resolution order is per-kind env var, `--home`, `TELEGRAM_HOME`, XDG (`XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME`), then platform defaults.
 - `config` contains settings like `config.toml` and profiles. `data` contains `credentials.toml`, `data.db`, cookies, and auth sidecars. `state` contains persisted queries, jobs, and `teach.log`. `cache` contains regenerable HTTP/cache files.
 - Stored secrets live in `credentials.toml` under the data dir. Existing legacy `config.toml` secrets are read for compatibility and leave `config.toml` on the first auth write.
-- Run `telegram-pp-cli doctor --fail-on warn` to surface path and credential-location warnings. `agent-context` exposes a schema v4 `paths` block for agents that need the resolved dirs.
+- Run `telegram-cli doctor --fail-on warn` to surface path and credential-location warnings. `agent-context` exposes a schema v4 `paths` block for agents that need the resolved dirs.
 - For MCP, pass relocation through the MCP host config. The MCP binary does not inherit CLI flags:
 
   ```json
   {
     "mcpServers": {
       "telegram": {
-        "command": "telegram-pp-mcp",
+        "command": "telegram-mcp",
         "env": {
           "TELEGRAM_HOME": "/srv/telegram"
         }
@@ -268,7 +268,7 @@ This CLI ships a self-capturing learning loop. The CLI does its own bookkeeping:
 Before list/search/drill commands on a new user question, run:
 
 ```bash
-telegram-pp-cli recall "<user's question>" --agent
+telegram-cli recall "<user's question>" --agent
 ```
 
 The response envelope:
@@ -291,7 +291,7 @@ The response envelope:
     { "id": 12, "class": "flag_alias | playbook_candidate",
       "summary": "...", "sightings": 3, "last_seen": "...",
       "rationale": "...",
-      "next_action": ["<trial command>", "telegram-pp-cli learnings confirm 12"] }
+      "next_action": ["<trial command>", "telegram-cli learnings confirm 12"] }
   ],
   "playbook": {
     "query_family": "...",
@@ -330,7 +330,7 @@ if Playbook present:
        for the entity slot tokens. If a step's slot is unresolved, fall back to
        discovery for that step only.
     -> the Playbook's expected_tool_calls is a budget; if you find yourself running
-       materially more, record the divergence via `telegram-pp-cli playbook amend`
+       materially more, record the divergence via `telegram-cli playbook amend`
        at end-of-session.
 
 elif Notes present (no Playbook):
@@ -356,7 +356,7 @@ else:  // Found == false, no playbook, no notes
 
 Playbook and Notes are orthogonal to the per-resource path. A recall response can carry both a Playbook AND a `Results[]` hit - use both: the Playbook tells you which choreography to run; the resource hits short-circuit specific steps. Default to skipping `mismatches`; pass `--debug-mismatches` only when investigating cold-start surprises.
 
-Candidate judgment details: `learnings confirm <id>` prints the candidate's full payload before materializing it - check that the printed payload matches the behavior you verified. `learnings reject <id>` tombstones the derivation signature so the same candidate does not resurface. The envelope carries only the few candidates worth acting on now; `telegram-pp-cli learnings candidates` lists the full open set.
+Candidate judgment details: `learnings confirm <id>` prints the candidate's full payload before materializing it - check that the printed payload matches the behavior you verified. `learnings reject <id>` tombstones the derivation signature so the same candidate does not resurface. The envelope carries only the few candidates worth acting on now; `telegram-cli learnings candidates` lists the full open set.
 
 Graceful degradation: if `learnings confirm` is an unknown command, you are driving an older binary - ignore the candidates guidance and follow the rest of the protocol.
 
@@ -375,7 +375,7 @@ Graceful degradation: if `learnings confirm` is an unknown command, you are driv
 Teaching is unconditional. After resolving a query the store could not answer, background-teach the final resource mapping - no call-count threshold, no judging whether it was "worth" learning. The teach is the anchor of the loop: it triggers playbook synthesis for a family without a playbook, and same-referent phrasings fold into one family so near-duplicate teaches do not fragment the store. Fire it after assembling your user-facing response but BEFORE emitting it, with a shell `&` so the call returns immediately:
 
 ```bash
-telegram-pp-cli teach --query "<user's question>" --resource-type <type> --resource <id1> --resource <id2>
+telegram-cli teach --query "<user's question>" --resource-type <type> --resource <id1> --resource <id2>
 # (append shell `&` to background it)
 ```
 
@@ -389,7 +389,7 @@ You do not need to decide whether a session "deserves" a playbook: a teach on a 
 
 ```bash
 # Common case: record both the resource learning AND the playbook in one call.
-telegram-pp-cli teach \
+telegram-cli teach \
   --query "<user's question>" \
   --resource <id> \
   --playbook-file ~/playbooks/<shape>.json \
@@ -397,7 +397,7 @@ telegram-pp-cli teach \
 # (append shell `&` to background it)
 
 # Alternate: playbook-only (no resource to record alongside).
-telegram-pp-cli teach-playbook \
+telegram-cli teach-playbook \
   --query "<user's question>" \
   --playbook-file ~/playbooks/<shape>.json \
   --notes-file ~/playbooks/<shape>-notes.md
@@ -412,7 +412,7 @@ When you DO find a playbook on a future recall, treat it as ground truth: replay
 If your debug-protocol response identifies a concrete correction the notes or playbook should know — a workaround, an undocumented endpoint shape, a stale field name, observed schema drift, an empty-payload fallback — fire `playbook amend` BEFORE emitting your user-facing response. Same fire-and-forget posture as `teach`.
 
 ```bash
-telegram-pp-cli playbook amend \
+telegram-cli playbook amend \
   --query "<exact recall query string>" \
   --add-note "<your concrete correction>"
 # (append shell `&` to background it)
@@ -434,7 +434,7 @@ The amend command appends to the family's existing notes with a timestamped mark
 
 #### PII discipline for amend notes
 
-`playbook amend` notes are designed to potentially flow upstream as shared knowledge in future versions of the Printing Press. Keep them clean of user-identifying content so the upstream-contribution path stays open without retroactive scrubbing:
+`playbook amend` notes are designed to potentially flow upstream as shared knowledge in future versions of this CLI. Keep them clean of user-identifying content so the upstream-contribution path stays open without retroactive scrubbing:
 
 - **Do NOT embed** paths to user filesystems, personal API keys or tokens, user email addresses, user GitHub handles, or specific query histories tied to a single user.
 - **Acceptable**: endpoint shapes, undocumented field names, API gotchas, observed schema drift, workarounds for CLI surfaces, generalizable pagination or retry tactics.
@@ -443,7 +443,7 @@ If a correction is only meaningful with user-specific context, it belongs in a p
 
 ### Measuring the loop
 
-`telegram-pp-cli learnings stats` reports recall hit rate, teach-to-reuse, playbook resolution rate, and candidate confirm/reject counts from the local `learn_events` table. Rates are null until they have a denominator; everything stays on this machine. Use it to check whether the loop is earning its keep for this CLI.
+`telegram-cli learnings stats` reports recall hit rate, teach-to-reuse, playbook resolution rate, and candidate confirm/reject counts from the local `learn_events` table. Rates are null until they have a denominator; everything stays on this machine. Use it to check whether the loop is earning its keep for this CLI.
 
 ### Disabling learning
 
@@ -455,9 +455,9 @@ If a correction is only meaningful with user-specific context, it belongs in a p
 When you (or the agent) notice something off about this CLI, record it:
 
 ```
-telegram-pp-cli feedback "the --since flag is inclusive but docs say exclusive"
-telegram-pp-cli feedback --stdin < notes.txt
-telegram-pp-cli feedback list --json --limit 10
+telegram-cli feedback "the --since flag is inclusive but docs say exclusive"
+telegram-cli feedback --stdin < notes.txt
+telegram-cli feedback list --json --limit 10
 ```
 
 Entries are stored locally as `feedback.jsonl` under the resolved data dir. They are never POSTed unless `TELEGRAM_FEEDBACK_ENDPOINT` is set AND either `--send` is passed or `TELEGRAM_FEEDBACK_AUTO_SEND=true`. Default behavior is local-only.
@@ -481,11 +481,11 @@ Unknown schemes are refused with a structured error naming the supported set. We
 A profile is a saved set of flag values, reused across invocations. Use it when a scheduled or recurring agent reuses the same saved flags while providing different input each run.
 
 ```
-telegram-pp-cli profile save briefing --json
-telegram-pp-cli --profile briefing mirror
-telegram-pp-cli profile list --json
-telegram-pp-cli profile show briefing
-telegram-pp-cli profile delete briefing --yes
+telegram-cli profile save briefing --json
+telegram-cli --profile briefing mirror
+telegram-cli profile list --json
+telegram-cli profile show briefing
+telegram-cli profile delete briefing --yes
 ```
 
 Explicit flags always win over profile values; profile values win over defaults. `agent-context` lists all available profiles under `available_profiles` so introspecting agents discover them at runtime.
@@ -505,7 +505,7 @@ Explicit flags always win over profile values; profile values win over defaults.
 
 Parse `$ARGUMENTS`:
 
-1. **Empty, `help`, or `--help`** → show `telegram-pp-cli --help` output
+1. **Empty, `help`, or `--help`** → show `telegram-cli --help` output
 2. **Starts with `install`** → ends with `mcp` → MCP installation; otherwise → see Prerequisites above
 3. **Anything else** → Direct Use (execute as CLI command with `--agent`)
 
@@ -513,21 +513,21 @@ Parse `$ARGUMENTS`:
 
 1. Install the MCP server:
    ```bash
-   go install github.com/mvanhorn/printing-press-library/library/social-and-messaging/telegram/cmd/telegram-pp-mcp@latest
+   go build -o bin/telegram-mcp ./cmd/telegram-mcp
    ```
 2. Register with Claude Code:
    ```bash
-   claude mcp add telegram-pp-mcp -- telegram-pp-mcp
+   claude mcp add telegram-mcp -- telegram-mcp
    ```
 3. Verify: `claude mcp list`
 
 ## Direct Use
 
-1. Check if installed: `which telegram-pp-cli`
+1. Check if installed: `which telegram-cli`
    If not found, offer to install (see Prerequisites at the top of this skill).
 2. Match the user query to the best command from the Unique Capabilities and Command Reference above.
 3. Execute with the `--agent` flag:
    ```bash
-   telegram-pp-cli <command> [subcommand] [args] --agent
+   telegram-cli <command> [subcommand] [args] --agent
    ```
-4. If ambiguous, drill into subcommand help: `telegram-pp-cli <command> --help`.
+4. If ambiguous, drill into subcommand help: `telegram-cli <command> --help`.

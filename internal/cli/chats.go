@@ -15,7 +15,7 @@ func newChatsCmd(flags *rootFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:         "chats",
 		Short:       "List and inspect Telegram chats (dialogs)",
-		Annotations: map[string]string{"mcp:read-only": "true"},
+		Annotations: map[string]string{"mcp:read-only": "true", "cli:api-resource": "true"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if dryRunOK(flags) {
 				return writeDryRun(cmd.OutOrStdout(), flags, "list chats")
@@ -59,7 +59,7 @@ func newMessagesCmd(flags *rootFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:         "messages <chat>",
 		Short:       "Show message history for a chat",
-		Annotations: map[string]string{"mcp:read-only": "true"},
+		Annotations: map[string]string{"mcp:read-only": "true", "cli:api-resource": "true"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if dryRunOK(flags) {
 				return writeDryRun(cmd.OutOrStdout(), flags, "read messages")
@@ -89,7 +89,7 @@ func newMessagesCmd(flags *rootFlags) *cobra.Command {
 			}
 			var messages []mtproto.MessageItem
 			err = mgr.DialAndRun(ctx, alias, func(ctx context.Context, client *telegram.Client, api *tg.Client) error {
-				resolver := mtproto.NewPeerResolver(s.DB())
+				resolver := liveResolver(s.DB(), api)
 				peer, err := resolver.Resolve(ctx, alias, ref)
 				if err != nil {
 					return err

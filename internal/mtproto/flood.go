@@ -15,9 +15,9 @@ type FloodKind int
 
 const (
 	FloodNone   FloodKind = iota
-	FloodWait               // FLOOD_WAIT_N — temporary, retry after N seconds
-	FloodPeer               // PEER_FLOOD — permanent cooldown on a specific peer
-	FloodBanned             // USER_BANNED / CHANNEL_PRIVATE etc — account-level ban
+	FloodWait             // FLOOD_WAIT_N — temporary, retry after N seconds
+	FloodPeer             // PEER_FLOOD — permanent cooldown on a specific peer
+	FloodBanned           // USER_BANNED / CHANNEL_PRIVATE etc — account-level ban
 )
 
 // ClassifyError inspects a gotd/td error and returns (kind, wait duration, scope).

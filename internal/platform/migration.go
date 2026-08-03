@@ -34,7 +34,7 @@ type LegacyMigrationArtifact struct {
 	BackupPath  string `json:"backup_path,omitempty"`
 }
 
-const legacyBackupSuffix = ".printing-press-backup"
+const legacyBackupSuffix = ".telegram-backup"
 
 // InspectLegacyMigrationPaths performs only filesystem metadata checks. It is
 // safe before the live tenant gate because it never opens a config or database.

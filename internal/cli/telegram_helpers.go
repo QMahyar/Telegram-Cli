@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"telegram-cli/internal/mtproto"
 	"telegram-cli/internal/store"
 
+	"github.com/gotd/td/tg"
 	"github.com/spf13/cobra"
 )
 
@@ -42,6 +44,17 @@ func parseTelegramFlags(cmd *cobra.Command) telegramCmdFlags {
 	f.Human, _ = cmd.Flags().GetBool("human")
 	f.Limit, _ = cmd.Flags().GetInt("limit")
 	return f
+}
+
+// liveResolver builds a PeerResolver whose @username lookups fall back to the
+// live session (contacts.resolveUsername) on cache miss, and persist the
+// resolved access hash for future offline lookups. Call it inside DialAndRun.
+func liveResolver(db *sql.DB, api *tg.Client) *mtproto.PeerResolver {
+	r := mtproto.NewPeerResolver(db)
+	r.Live = func(ctx context.Context, username string) (tg.InputPeerClass, error) {
+		return mtproto.ResolveUsernameLive(ctx, api, username)
+	}
+	return r
 }
 
 // openManager creates an mtproto.Manager using the resolved home directory.

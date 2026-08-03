@@ -20,7 +20,7 @@ const TelegramDirName = "telegram-cli"
 const (
 	EnvAppID   = "TELEGRAM_API_ID"
 	EnvAppHash = "TELEGRAM_API_HASH"
-	EnvHome    = "TELEGRAM_PP_HOME"
+	EnvHome    = "TELEGRAM_HOME_DIR"
 )
 
 // AppCredentials returns the Telegram app credentials (api_id, api_hash)
@@ -39,7 +39,7 @@ func AppCredentials() (appID int, appHash string, err error) {
 }
 
 // HomeDir resolves the root data directory for sessions, databases and jobs.
-// Explicit override (root --home flag) wins; then TELEGRAM_PP_HOME; then the
+// Explicit override (root --home flag) wins; then TELEGRAM_HOME_DIR; then the
 // CLI's shared data directory (which itself honors the --home flag wiring).
 func HomeDir(explicit string) (string, error) {
 	if explicit != "" {

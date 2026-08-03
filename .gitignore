@@ -1,4 +1,4 @@
-telegram-pp-cli.exe
+telegram-cli.exe
 *.exe
 *.db
 *.db-journal

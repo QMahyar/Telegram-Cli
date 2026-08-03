@@ -20,7 +20,7 @@ func newNovelAccountsCmd(flags *rootFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:         "accounts",
 		Short:       "manage Telegram accounts: add, list, use, rename, remove, status, health, import",
-		Annotations: map[string]string{"mcp:read-only": "true"},
+		Annotations: map[string]string{"mcp:read-only": "true", "cli:api-resource": "true"},
 		RunE:        parentNoSubcommandRunE(flags),
 	}
 	cmd.AddCommand(
@@ -39,8 +39,8 @@ func newNovelAccountsCmd(flags *rootFlags) *cobra.Command {
 func newAccountsAddCmd(flags *rootFlags) *cobra.Command {
 	var phone, alias string
 	cmd := &cobra.Command{
-		Use:     "add",
-		Short:   "Add a new Telegram account (phone + code login)",
+		Use:   "add",
+		Short: "Add a new Telegram account (phone + code login)",
 		Example: `  tele accounts add --phone +1234567890 --alias work
   tele accounts add --phone +98912345678 --alias personal`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -181,7 +181,7 @@ func newAccountsRenameCmd(flags *rootFlags) *cobra.Command {
 		Short: "Rename an account alias",
 		Example: `  tele accounts rename work office
   tele accounts rename personal main`,
-		Args:  cobra.ExactArgs(2),
+		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			oldAlias, newAlias := args[0], args[1]
 			home, err := config.HomeDir(flags.homePath)

@@ -31,9 +31,9 @@ type Account struct {
 // Manager manages the set of logged-in accounts and provides
 // one-shot client execution (DialAndRun).
 type Manager struct {
-	Home     string // root data dir (<home>/sessions/<alias>/)
-	APIID    int
-	APIHash  string
+	Home    string // root data dir (<home>/sessions/<alias>/)
+	APIID   int
+	APIHash string
 }
 
 // NewManager creates a manager. Call config.AppCredentials() to get apiID/apiHash.
@@ -70,13 +70,22 @@ func (m *Manager) SessionDir(alias string) string {
 // clientOpts returns the common telegram.Options for one-shot execution.
 func (m *Manager) clientOpts(sessionDir string) telegram.Options {
 	return telegram.Options{
-		Device:   telegram.DeviceTDesktopWindows(),
-		Resolver: telegram.TDesktopResolver(),
+		Device:         telegram.DeviceTDesktopWindows(),
+		Resolver:       telegram.TDesktopResolver(),
 		SessionStorage: &session.FileStorage{Path: filepath.Join(sessionDir, "session.json")},
 		// NoUpdates: true — we don't need persistent update handling
 		// for one-shot CLI commands. QR login will need this turned on.
 		NoUpdates: true,
 	}
+}
+
+// clientOptsWithUpdates enables live update delivery to handler. Used by
+// commands that must observe inbound updates (e.g. watch).
+func (m *Manager) clientOptsWithUpdates(sessionDir string, handler telegram.UpdateHandler) telegram.Options {
+	opts := m.clientOpts(sessionDir)
+	opts.NoUpdates = false
+	opts.UpdateHandler = handler
+	return opts
 }
 
 // ClientFunc is the callback executed inside a one-shot gotd client.Run.
@@ -97,6 +106,21 @@ func (m *Manager) DialAndRun(ctx context.Context, alias string, fn ClientFunc) e
 func (m *Manager) DialAndRunUnchecked(ctx context.Context, alias string, fn ClientFunc) error {
 	dir := m.SessionDir(alias)
 	return m.dial(ctx, dir, fn)
+}
+
+// DialAndRunWithUpdates is like DialAndRun but attaches a live update handler
+// (NoUpdates disabled) so the callback can observe inbound updates as they
+// arrive. The handler runs on the client's update dispatch loop.
+func (m *Manager) DialAndRunWithUpdates(ctx context.Context, alias string, handler telegram.UpdateHandler, fn ClientFunc) error {
+	dir := m.SessionDir(alias)
+	if _, err := os.Stat(filepath.Join(dir, "session.json")); os.IsNotExist(err) {
+		return fmt.Errorf("account %q has no session — run: telegram-cli accounts add %s", alias, alias)
+	}
+	opts := m.clientOptsWithUpdates(dir, handler)
+	client := telegram.NewClient(m.APIID, m.APIHash, opts)
+	return client.Run(ctx, func(ctx context.Context) error {
+		return fn(ctx, client, client.API())
+	})
 }
 
 func (m *Manager) dial(ctx context.Context, sessionDir string, fn ClientFunc) error {

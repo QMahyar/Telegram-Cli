@@ -1,15 +1,15 @@
 version: 2
-project_name: telegram-pp-cli
+project_name: telegram-cli
 changelog:
   disable: true
 builds:
-  - id: telegram-pp-cli
-    main: ./cmd/telegram-pp-cli
-    binary: telegram-pp-cli
+  - id: telegram-cli
+    main: ./cmd/telegram-cli
+    binary: telegram-cli
     env:
       - CGO_ENABLED=0
     ldflags:
-      - -s -w -X telegram-pp-cli/internal/cli.version={{ .Version }}
+      - -s -w -X telegram-cli/internal/cli.version={{ .Version }}
     targets:
       - darwin_amd64
       - darwin_arm64
@@ -17,9 +17,9 @@ builds:
       - linux_arm64
       - windows_amd64
       - windows_arm64
-  - id: telegram-pp-mcp
-    main: ./cmd/telegram-pp-mcp
-    binary: telegram-pp-mcp
+  - id: telegram-mcp
+    main: ./cmd/telegram-mcp
+    binary: telegram-mcp
     env:
       - CGO_ENABLED=0
     ldflags:
@@ -40,12 +40,12 @@ archives:
 checksum:
   name_template: checksums.txt
 brews:
-  - name: telegram-pp-cli
+  - name: telegram-cli
     repository:
       owner: qmahyar
       name: homebrew-tap
-    homepage: "https://github.com/qmahyar/telegram-pp-cli"
+    homepage: "https://github.com/qmahyar/telegram-cli"
     description: "Every Telegram account you own in one terminal: unified sync and search, flood-aware cross-account broadcasts, and a schema-driven raw gateway no other Telegram CLI offers."
     install: |
-      bin.install "telegram-pp-cli"
-      bin.install "telegram-pp-mcp"
+      bin.install "telegram-cli"
+      bin.install "telegram-mcp"

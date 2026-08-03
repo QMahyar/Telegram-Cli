@@ -47,7 +47,7 @@ func newSendCmd(flags *rootFlags) *cobra.Command {
 			}
 			var msgID int64
 			err = mgr.DialAndRun(ctx, alias, func(ctx context.Context, client *telegram.Client, api *tg.Client) error {
-				resolver := mtproto.NewPeerResolver(s.DB())
+				resolver := liveResolver(s.DB(), api)
 				peer, err := resolver.Resolve(ctx, alias, ref)
 				if err != nil {
 					return err
@@ -108,7 +108,7 @@ func newForwardCmd(flags *rootFlags) *cobra.Command {
 				return err
 			}
 			err = mgr.DialAndRun(ctx, alias, func(ctx context.Context, client *telegram.Client, api *tg.Client) error {
-				resolver := mtproto.NewPeerResolver(s.DB())
+				resolver := liveResolver(s.DB(), api)
 				fromPeer, err := resolver.Resolve(ctx, alias, fromRef)
 				if err != nil {
 					return err
@@ -183,8 +183,8 @@ func newDeleteCmd(flags *rootFlags) *cobra.Command {
 
 func newReadCmd(flags *rootFlags) *cobra.Command {
 	return &cobra.Command{
-		Use:     "read <chat>",
-		Short:   "Mark all messages in a chat as read",
+		Use:   "read <chat>",
+		Short: "Mark all messages in a chat as read",
 		Example: `  tele read @username
   tele read me`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -214,7 +214,7 @@ func newReadCmd(flags *rootFlags) *cobra.Command {
 				return err
 			}
 			err = mgr.DialAndRun(ctx, alias, func(ctx context.Context, client *telegram.Client, api *tg.Client) error {
-				resolver := mtproto.NewPeerResolver(s.DB())
+				resolver := liveResolver(s.DB(), api)
 				peer, err := resolver.Resolve(ctx, alias, ref)
 				if err != nil {
 					return err
@@ -264,7 +264,7 @@ func newReactCmd(flags *rootFlags) *cobra.Command {
 				return err
 			}
 			err = mgr.DialAndRun(ctx, alias, func(ctx context.Context, client *telegram.Client, api *tg.Client) error {
-				resolver := mtproto.NewPeerResolver(s.DB())
+				resolver := liveResolver(s.DB(), api)
 				peer, err := resolver.Resolve(ctx, alias, ref)
 				if err != nil {
 					return err
@@ -309,7 +309,7 @@ func newEditCmd(flags *rootFlags) *cobra.Command {
 				return err
 			}
 			err = mgr.DialAndRun(ctx, alias, func(ctx context.Context, client *telegram.Client, api *tg.Client) error {
-				resolver := mtproto.NewPeerResolver(s.DB())
+				resolver := liveResolver(s.DB(), api)
 				peer, err := resolver.Resolve(ctx, alias, ref)
 				if err != nil {
 					return err
@@ -359,7 +359,7 @@ func newMediaCmd(flags *rootFlags) *cobra.Command {
 			}
 			var savedPath string
 			err = mgr.DialAndRun(ctx, alias, func(ctx context.Context, client *telegram.Client, api *tg.Client) error {
-				resolver := mtproto.NewPeerResolver(s.DB())
+				resolver := liveResolver(s.DB(), api)
 				peer, err := resolver.Resolve(ctx, alias, ref)
 				if err != nil {
 					return err

@@ -12,9 +12,14 @@ import (
 
 // PeerResolver resolves text references (username, ID, "me") to tg.InputPeerClass.
 // It uses a local SQLite cache populated by `sync` and populated during
-// dialog/message sync. Fallback to ContactsResolveUsername when the cache misses.
+// dialog/message sync. Live provides an optional API-backed fallback for
+// @username misses (wired by commands that hold a live session).
 type PeerResolver struct {
 	db *sql.DB
+	// Live resolves an @username via the live session (e.g. contacts.resolveUsername).
+	// It must return the InputPeer and the username that was requested, so the
+	// resolver can persist the resolved access hash into the local cache.
+	Live func(ctx context.Context, username string) (tg.InputPeerClass, error)
 }
 
 // NewPeerResolver wraps a *sql.DB.
@@ -82,9 +87,51 @@ func (pr *PeerResolver) resolveUsername(ctx context.Context, account, username s
 		return makeInputPeer(peerType, peerID, hash), nil
 	}
 
-	// Cache miss or missing access_hash — try to resolve via cache from dialogs
-	// (the sync command populates the cache with access_hash values).
+	// Cache miss or missing access_hash — fall back to the live session when
+	// one is attached, then persist the resolved peer so future lookups hit.
+	if pr.Live != nil {
+		peer, err := pr.Live(ctx, username)
+		if err != nil {
+			return nil, err
+		}
+		if err := pr.persistResolved(ctx, account, username, peer); err != nil {
+			// Persistence is best-effort; the resolved peer still works.
+			_ = err
+		}
+		return peer, nil
+	}
+
 	return nil, fmt.Errorf("@%s not found in local cache — run sync first or use numeric ID", username)
+}
+
+// persistResolved stores a live-resolved peer (with its access hash) into the
+// local cache so subsequent lookups for the same username succeed offline.
+func (pr *PeerResolver) persistResolved(ctx context.Context, account, username string, peer tg.InputPeerClass) error {
+	switch p := peer.(type) {
+	case *tg.InputPeerUser:
+		_, err := pr.db.ExecContext(ctx,
+			`INSERT OR REPLACE INTO tg_peers (account, peer_type, peer_id, access_hash, title, username, updated_at)
+			 VALUES (?, 'user', ?, ?, '', ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))`,
+			account, p.UserID, p.AccessHash, username,
+		)
+		return err
+	case *tg.InputPeerChannel:
+		_, err := pr.db.ExecContext(ctx,
+			`INSERT OR REPLACE INTO tg_peers (account, peer_type, peer_id, access_hash, title, username, updated_at)
+			 VALUES (?, 'channel', ?, ?, '', ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))`,
+			account, p.ChannelID, p.AccessHash, username,
+		)
+		return err
+	case *tg.InputPeerChat:
+		_, err := pr.db.ExecContext(ctx,
+			`INSERT OR REPLACE INTO tg_peers (account, peer_type, peer_id, access_hash, title, username, updated_at)
+			 VALUES (?, 'chat', ?, 0, '', ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))`,
+			account, p.ChatID, username,
+		)
+		return err
+	default:
+		return fmt.Errorf("unsupported resolved peer type %T", peer)
+	}
 }
 
 // resolveByID maps a raw numeric ID to InputPeerClass using cached access_hash.
