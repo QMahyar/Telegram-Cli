@@ -17,6 +17,9 @@ func newChatsCmd(flags *rootFlags) *cobra.Command {
 		Short:       "List and inspect Telegram chats (dialogs)",
 		Annotations: map[string]string{"mcp:read-only": "true"},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if dryRunOK(flags) {
+				return writeDryRun(cmd.OutOrStdout(), flags, "list chats")
+			}
 			home, err := config.HomeDir(flags.homePath)
 			if err != nil {
 				return err
@@ -57,8 +60,13 @@ func newMessagesCmd(flags *rootFlags) *cobra.Command {
 		Use:         "messages <chat>",
 		Short:       "Show message history for a chat",
 		Annotations: map[string]string{"mcp:read-only": "true"},
-		Args:        cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if dryRunOK(flags) {
+				return writeDryRun(cmd.OutOrStdout(), flags, "read messages")
+			}
+			if len(args) == 0 {
+				return cmd.Help()
+			}
 			ref := args[0]
 			home, err := config.HomeDir(flags.homePath)
 			if err != nil {

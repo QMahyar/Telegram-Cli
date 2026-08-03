@@ -23,6 +23,9 @@ func newNovelBroadcastCmd(flags *rootFlags) *cobra.Command {
 		Example: `  tele broadcast --text "Hello everyone!" @channel1 @channel2
   tele broadcast --media photo.jpg --text "Check this out" @group1`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if dryRunOK(flags) {
+				return writeDryRun(cmd.OutOrStdout(), flags, "broadcast message")
+			}
 			if text == "" && template == "" {
 				return fmt.Errorf("provide --text or --template")
 			}
@@ -186,8 +189,13 @@ func newNovelSinceCmd(flags *rootFlags) *cobra.Command {
 		Use:         "since <time-spec>",
 		Short:       "Show new messages since a point in time",
 		Annotations: map[string]string{"mcp:read-only": "true"},
-		Args:        cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if dryRunOK(flags) {
+				return writeDryRun(cmd.OutOrStdout(), flags, "query messages since time")
+			}
+			if len(args) == 0 {
+				return cmd.Help()
+			}
 			sinceStr := args[0]
 			since, err := time.Parse(time.RFC3339, sinceStr)
 			if err != nil {
@@ -231,6 +239,9 @@ func newNovelDigestCmd(flags *rootFlags) *cobra.Command {
 		Short:       "Generate a digest of recent activity",
 		Annotations: map[string]string{"mcp:read-only": "true"},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if dryRunOK(flags) {
+				return writeDryRun(cmd.OutOrStdout(), flags, "generate digest")
+			}
 			home, err := config.HomeDir(flags.homePath)
 			if err != nil {
 				return err
@@ -312,6 +323,8 @@ func newDaemonRunCmd(flags *rootFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Run the daemon for a fixed duration",
+		Example: `  tele daemon run --duration 10m
+  tele daemon run --duration 1h --json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dur, err := time.ParseDuration(duration)
 			if err != nil {

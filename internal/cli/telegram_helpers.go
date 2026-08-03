@@ -52,6 +52,11 @@ func openManager(home string) (*mtproto.Manager, error) {
 // openStore opens the mirror SQLite database and ensures the Telegram schema.
 func openStore(ctx context.Context, home string) (*store.Store, error) {
 	dbPath := config.DefaultDBPath(home)
+	return openStoreAtPath(ctx, dbPath)
+}
+
+// openStoreAtPath opens a SQLite database at the specified path and ensures the Telegram schema.
+func openStoreAtPath(ctx context.Context, dbPath string) (*store.Store, error) {
 	s, err := store.Open(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("open store: %w", err)

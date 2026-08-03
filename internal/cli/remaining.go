@@ -130,6 +130,8 @@ func newSQLCmd(flags *rootFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:         "sql <query>",
 		Short:       "Run a read-only SQL query against the mirror database",
+		Example: `  tele sql "SELECT COUNT(*) FROM tg_messages"
+  tele sql "SELECT alias, phone FROM tg_accounts" --json`,
 		Annotations: map[string]string{"mcp:read-only": "true"},
 		Args:        cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

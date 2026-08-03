@@ -179,6 +179,8 @@ func newAccountsRenameCmd(flags *rootFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:   "rename <old-alias> <new-alias>",
 		Short: "Rename an account alias",
+		Example: `  tele accounts rename work office
+  tele accounts rename personal main`,
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			oldAlias, newAlias := args[0], args[1]

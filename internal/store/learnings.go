@@ -532,6 +532,7 @@ func (s *Store) ForgetLearnings(ctx context.Context, f ForgetLearningsFilter) (i
 		clauses = append(clauses, "action = ?")
 		args = append(args, f.Action)
 	}
+	// #nosec G202 -- clauses are hardcoded strings, args are parameterized with ?
 	q := "DELETE FROM search_learnings WHERE " + strings.Join(clauses, " AND ")
 	res, err := s.db.ExecContext(ctx, q, args...)
 	if err != nil {

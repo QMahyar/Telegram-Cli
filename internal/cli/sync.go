@@ -6,6 +6,7 @@ import (
 
 	"telegram-cli/internal/config"
 	"telegram-cli/internal/mtproto"
+	"telegram-cli/internal/store"
 
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/tg"
@@ -13,16 +14,25 @@ import (
 )
 
 func newSyncCmd(flags *rootFlags) *cobra.Command {
+	var dbPath string
 	cmd := &cobra.Command{
 		Use:   "sync [chat]",
 		Short: "Sync dialogs (or messages from a specific chat) to the local mirror",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if dryRunOK(flags) {
+				return writeDryRun(cmd.OutOrStdout(), flags, "sync dialogs")
+			}
 			home, err := config.HomeDir(flags.homePath)
 			if err != nil {
 				return err
 			}
 			ctx := cmd.Context()
-			s, err := openStore(ctx, home)
+			var s *store.Store
+			if dbPath != "" {
+				s, err = openStoreAtPath(ctx, dbPath)
+			} else {
+				s, err = openStore(ctx, home)
+			}
 			if err != nil {
 				return err
 			}
@@ -60,6 +70,7 @@ func newSyncCmd(flags *rootFlags) *cobra.Command {
 			return err
 		},
 	}
+	cmd.Flags().StringVar(&dbPath, "db", "", "path to SQLite database (default: auto-detected)")
 	addTelegramFlags(cmd, telegramCmdFlags{Limit: 100})
 	return cmd
 }

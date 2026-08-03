@@ -690,7 +690,7 @@ func newLearningsListCmd(flags *rootFlags) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List recorded learnings",
+		Short: "List learned query patterns and flag aliases from past sessions",
 		Example: `  telegram-cli learnings list --agent
   telegram-cli learnings list --query "<substring>"
   telegram-cli learnings list --warnings --agent`,

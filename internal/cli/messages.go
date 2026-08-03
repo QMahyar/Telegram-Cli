@@ -19,8 +19,13 @@ func newSendCmd(flags *rootFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "send <chat> <message>",
 		Short: "Send a text message (or media with --media) to a chat",
-		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if dryRunOK(flags) {
+				return writeDryRun(cmd.OutOrStdout(), flags, "send message")
+			}
+			if len(args) < 2 {
+				return cmd.Help()
+			}
 			ref, text := args[0], args[1]
 			home, err := config.HomeDir(flags.homePath)
 			if err != nil {
@@ -70,8 +75,13 @@ func newForwardCmd(flags *rootFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "forward <from-chat> <to-chat> <msg-id...>",
 		Short: "Forward messages from one chat to another",
-		Args:  cobra.MinimumNArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if dryRunOK(flags) {
+				return writeDryRun(cmd.OutOrStdout(), flags, "forward messages")
+			}
+			if len(args) < 3 {
+				return cmd.Help()
+			}
 			fromRef, toRef := args[0], args[1]
 			var msgIDs []int64
 			for _, a := range args[2:] {
@@ -126,8 +136,13 @@ func newDeleteCmd(flags *rootFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete <chat> <msg-id...>",
 		Short: "Delete messages from a chat",
-		Args:  cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if dryRunOK(flags) {
+				return writeDryRun(cmd.OutOrStdout(), flags, "delete messages")
+			}
+			if len(args) < 2 {
+				return cmd.Help()
+			}
 			var msgIDs []int64
 			for _, a := range args[1:] {
 				var id int64
@@ -172,8 +187,13 @@ func newReadCmd(flags *rootFlags) *cobra.Command {
 		Short:   "Mark all messages in a chat as read",
 		Example: `  tele read @username
   tele read me`,
-		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if dryRunOK(flags) {
+				return writeDryRun(cmd.OutOrStdout(), flags, "mark as read")
+			}
+			if len(args) == 0 {
+				return cmd.Help()
+			}
 			ref := args[0]
 			home, err := config.HomeDir(flags.homePath)
 			if err != nil {
@@ -215,8 +235,13 @@ func newReactCmd(flags *rootFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:   "react <chat> <msg-id> <emoji>",
 		Short: "Send an emoji reaction to a message",
-		Args:  cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if dryRunOK(flags) {
+				return writeDryRun(cmd.OutOrStdout(), flags, "send reaction")
+			}
+			if len(args) < 3 {
+				return cmd.Help()
+			}
 			ref, emoji := args[0], args[2]
 			var msgID int64
 			fmt.Sscanf(args[1], "%d", &msgID)
@@ -255,8 +280,13 @@ func newEditCmd(flags *rootFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:   "edit <chat> <msg-id> <new-text>",
 		Short: "Edit a sent message",
-		Args:  cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if dryRunOK(flags) {
+				return writeDryRun(cmd.OutOrStdout(), flags, "edit message")
+			}
+			if len(args) < 3 {
+				return cmd.Help()
+			}
 			ref, text := args[0], args[2]
 			var msgID int64
 			fmt.Sscanf(args[1], "%d", &msgID)
@@ -295,8 +325,13 @@ func newMediaCmd(flags *rootFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "media <chat> <msg-id> [out-dir]",
 		Short: "Download media from a message",
-		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if dryRunOK(flags) {
+				return writeDryRun(cmd.OutOrStdout(), flags, "download media")
+			}
+			if len(args) < 2 {
+				return cmd.Help()
+			}
 			ref := args[0]
 			var msgID int64
 			fmt.Sscanf(args[1], "%d", &msgID)

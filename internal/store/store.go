@@ -1989,6 +1989,7 @@ func (s *Store) ListField(resourceType, field string) ([]string, error) {
 		// Fall back to generic resources table via json_extract. Path is
 		// Sprintf'd into the SQL string (matches ResolveByName below).
 		// DISTINCT for the same reason as the typed-column path above.
+		// #nosec G201 -- field is validated against validIdentifierRE (alphanumeric + underscore only)
 		fallback := fmt.Sprintf(
 			`SELECT DISTINCT json_extract(data, '$.%s') FROM resources WHERE resource_type = ? AND json_extract(data, '$.%s') IS NOT NULL`,
 			field, field,
@@ -2282,6 +2283,7 @@ func (s *Store) ResolveByName(resourceType string, input string, matchFields ...
 		if !validIdentifierRE.MatchString(field) {
 			continue
 		}
+		// #nosec G201 -- field is validated against validIdentifierRE (alphanumeric + underscore only)
 		query := fmt.Sprintf(
 			`SELECT id FROM resources WHERE resource_type = ? AND LOWER(json_extract(data, '$.%s')) = LOWER(?)`,
 			field,

@@ -24,27 +24,12 @@
     "detail": "spec not provided; OAuth scope coverage check skipped"
   },
   "dead_flags": {
-    "total": 24,
-    "dead": 1,
-    "items": [
-      "maxAge"
-    ]
+    "total": 23,
+    "dead": 0
   },
   "dead_functions": {
-    "total": 77,
-    "dead": 10,
-    "items": [
-      "classifyAPIError",
-      "collectionItemsForOutput",
-      "hasChangedLocalFlags",
-      "notFoundErr",
-      "printProvenance",
-      "rateLimitErr",
-      "wantsHumanTable",
-      "wantsMachineOutput",
-      "wrapWithProvenance",
-      "writeAPIErrorEnvelope"
-    ]
+    "total": 67,
+    "dead": 0
   },
   "pipeline_check": {
     "sync_calls_domain": false,
@@ -56,14 +41,9 @@
   },
   "example_check": {
     "tested": 10,
-    "with_examples": 7,
-    "valid_examples": 7,
-    "missing": [
-      "accounts rename",
-      "daemon run",
-      "sql"
-    ],
-    "detail": "7/10 commands have examples"
+    "with_examples": 10,
+    "valid_examples": 10,
+    "detail": "10/10 commands have examples"
   },
   "wiring_check": {
     "command_tree": {
@@ -105,10 +85,7 @@
     "checked": 29
   },
   "test_presence": {
-    "checked": 3,
-    "missing_tests": [
-      "mtproto"
-    ]
+    "checked": 3
   },
   "naming_check": {
     "checked": 29
@@ -118,10 +95,7 @@
     "skipped": true
   },
   "issues": [
-    "1 dead flags found",
-    "10 dead helper functions found",
     "sync uses generic Upsert only",
-    "1 unregistered commands: mirror",
-    "pure-logic packages with no tests: mtproto"
+    "1 unregistered commands: mirror"
   ]
 }

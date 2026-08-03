@@ -154,6 +154,7 @@ func AdoptVerifiedLegacyDatabase(ctx context.Context, session *Session, state *L
 		return fmt.Errorf("create migration destination directory: %w", err)
 	}
 	quotedTarget := strings.ReplaceAll(targetPath, "'", "''")
+	// #nosec G202 -- targetPath is a local file path, single quotes escaped for SQLite VACUUM INTO
 	if _, err := source.ExecContext(ctx, "VACUUM INTO '"+quotedTarget+"'"); err != nil {
 		_ = os.Remove(targetPath)
 		return fmt.Errorf("copy verified legacy database: %w", err)
