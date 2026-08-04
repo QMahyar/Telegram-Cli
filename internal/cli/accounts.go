@@ -11,6 +11,7 @@ import (
 	"telegram-cli/internal/config"
 	"telegram-cli/internal/mtproto"
 
+	"github.com/gotd/td/session"
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/tg"
 	"github.com/spf13/cobra"
@@ -37,18 +38,20 @@ func newNovelAccountsCmd(flags *rootFlags) *cobra.Command {
 }
 
 func newAccountsAddCmd(flags *rootFlags) *cobra.Command {
-	var phone, alias string
+	var phone, alias, code, password string
+	var useQR bool
 	cmd := &cobra.Command{
 		Use:   "add",
-		Short: "Add a new Telegram account (phone + code login)",
+		Short: "Add a new Telegram account (phone + code login, or --qr)",
 		Example: `  telegram-cli accounts add --phone +1234567890 --alias work
-  telegram-cli accounts add --phone +98912345678 --alias personal`,
+  telegram-cli accounts add --phone +98912345678 --alias personal
+  telegram-cli accounts add --qr --alias work`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if alias == "" {
 				return fmt.Errorf("--alias is required")
 			}
-			if phone == "" {
-				return fmt.Errorf("--phone is required")
+			if !useQR && phone == "" {
+				return fmt.Errorf("--phone is required (or use --qr to log in by scanning a code)")
 			}
 			home, err := config.HomeDir(flags.homePath)
 			if err != nil {
@@ -63,24 +66,54 @@ func newAccountsAddCmd(flags *rootFlags) *cobra.Command {
 				return fmt.Errorf("create session dir: %w", err)
 			}
 			ctx := cmd.Context()
-			fmt.Fprintf(os.Stderr, "Logging in as %s...\n", phone)
-			err = mgr.DialAndRunUnchecked(ctx, alias, func(ctx context.Context, client *telegram.Client, api *tg.Client) error {
-				codeFn := func(ctx context.Context, phone string) (string, error) {
-					fmt.Fprintf(os.Stderr, "Enter the code sent to %s: ", phone)
-					var code string
-					fmt.Scanln(&code)
-					return strings.TrimSpace(code), nil
+			if useQR {
+				if flags.noInput {
+					return usageErr(fmt.Errorf("QR login requires a human to scan the code; --no-input cannot complete it"))
 				}
-				pwdFn := func(ctx context.Context) (string, error) {
-					fmt.Fprint(os.Stderr, "Enter 2FA password (leave empty if none): ")
-					var pwd string
-					fmt.Scanln(&pwd)
-					return strings.TrimSpace(pwd), nil
+				fmt.Fprintf(os.Stderr, "Scan the QR code with your Telegram app (Settings → Devices → Link Desktop Device)...\n")
+				dispatcher := tg.NewUpdateDispatcher()
+				err = mgr.DialAndRunUncheckedWithUpdates(ctx, alias, dispatcher, func(ctx context.Context, client *telegram.Client, api *tg.Client) error {
+					return mtproto.LoginQR(ctx, client, dispatcher, func(ctx context.Context, url string) error {
+						fmt.Fprintf(os.Stderr, "Scan this QR code: %s\n", url)
+						return nil
+					})
+				})
+				if err != nil {
+					return fmt.Errorf("QR login failed: %w", err)
 				}
-				return mtproto.LoginPhone(ctx, client, phone, codeFn, pwdFn)
-			})
-			if err != nil {
-				return fmt.Errorf("login failed: %w", err)
+				fmt.Fprintf(os.Stderr, "QR login succeeded for %q.\n", alias)
+			} else {
+				fmt.Fprintf(os.Stderr, "Logging in as %s...\n", phone)
+				err = mgr.DialAndRunUnchecked(ctx, alias, func(ctx context.Context, client *telegram.Client, api *tg.Client) error {
+					codeFn := func(ctx context.Context, phone string) (string, error) {
+						if code != "" {
+							return code, nil
+						}
+						if flags.noInput {
+							return "", fmt.Errorf("login code required: pass --code to log in non-interactively, or remove --no-input")
+						}
+						fmt.Fprintf(os.Stderr, "Enter the code sent to %s: ", phone)
+						var c string
+						fmt.Scanln(&c)
+						return strings.TrimSpace(c), nil
+					}
+					pwdFn := func(ctx context.Context) (string, error) {
+						if password != "" {
+							return password, nil
+						}
+						if flags.noInput {
+							return "", fmt.Errorf("2FA password required: pass --password to log in non-interactively, or remove --no-input")
+						}
+						fmt.Fprint(os.Stderr, "Enter 2FA password (leave empty if none): ")
+						var pwd string
+						fmt.Scanln(&pwd)
+						return strings.TrimSpace(pwd), nil
+					}
+					return mtproto.LoginPhone(ctx, client, phone, codeFn, pwdFn)
+				})
+				if err != nil {
+					return fmt.Errorf("login failed: %w", err)
+				}
 			}
 			s, err := openStore(ctx, home)
 			if err != nil {
@@ -88,18 +121,26 @@ func newAccountsAddCmd(flags *rootFlags) *cobra.Command {
 			}
 			defer s.DB().Close()
 			_, err = s.DB().ExecContext(ctx,
-				`INSERT INTO tg_accounts (alias, session_dir, phone, status) VALUES (?, ?, ?, 'active')`,
+				`INSERT OR REPLACE INTO tg_accounts (alias, session_dir, phone, status) VALUES (?, ?, ?, 'active')`,
 				alias, dir, phone,
 			)
 			if err != nil {
 				return fmt.Errorf("save account: %w", err)
 			}
-			fmt.Fprintf(os.Stderr, "Account %q added successfully.\n", alias)
-			return nil
+			// Machine-readable success on stdout; human prose on stderr only.
+			f := parseTelegramFlags(cmd)
+			return outResult(stdout(), f, map[string]any{
+				"alias":  alias,
+				"status": "active",
+			})
 		},
 	}
 	cmd.Flags().StringVar(&phone, "phone", "", "phone number with country code (e.g. +1234567890)")
 	cmd.Flags().StringVar(&alias, "alias", "", "short alias for this account")
+	cmd.Flags().StringVar(&code, "code", "", "login code sent to the phone (non-interactive; skip to be prompted)")
+	cmd.Flags().BoolVar(&useQR, "qr", false, "log in by scanning a QR code with the Telegram app")
+	cmd.Flags().StringVar(&password, "password", "", "2FA cloud password (non-interactive; skip to be prompted)")
+	addTelegramFlags(cmd)
 	return cmd
 }
 
@@ -170,7 +211,7 @@ func newAccountsUseCmd(flags *rootFlags) *cobra.Command {
 				return fmt.Errorf("account %q not found", alias)
 			}
 			fmt.Fprintf(os.Stderr, "Now using account %q.\n", alias)
-			return nil
+			return mutationResult(parseTelegramFlags(cmd), map[string]any{"alias": alias, "using": true})
 		},
 	}
 }
@@ -210,7 +251,7 @@ func newAccountsRenameCmd(flags *rootFlags) *cobra.Command {
 				os.Rename(oldDir, newDir)
 			}
 			fmt.Fprintf(os.Stderr, "Renamed %q → %q.\n", oldAlias, newAlias)
-			return nil
+			return mutationResult(parseTelegramFlags(cmd), map[string]any{"from": oldAlias, "to": newAlias})
 		},
 	}
 }
@@ -246,7 +287,7 @@ func newAccountsRemoveCmd(flags *rootFlags) *cobra.Command {
 				os.RemoveAll(filepath.Join(home, "sessions", alias))
 			}
 			fmt.Fprintf(os.Stderr, "Account %q removed.\n", alias)
-			return nil
+			return mutationResult(parseTelegramFlags(cmd), map[string]any{"alias": alias, "removed": true})
 		},
 	}
 	cmd.Flags().BoolVar(&keepSession, "keep-session", false, "keep session files (don't log out)")
@@ -371,6 +412,11 @@ func newAccountsHealthCmd(flags *rootFlags) *cobra.Command {
 	return cmd
 }
 
+// newAccountsImportCmd imports a Telethon/Pyrogram string session: it decodes
+// the string with gotd's session.TelethonSession, writes the session in the
+// same FileStorage format the live login flow uses, and registers the alias in
+// the local store. A decoded session is required before anything is written so
+// a malformed string can never leave a half-valid session file behind.
 func newAccountsImportCmd(flags *rootFlags) *cobra.Command {
 	var sessionStr, alias string
 	cmd := &cobra.Command{
@@ -387,26 +433,46 @@ func newAccountsImportCmd(flags *rootFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			_ = sessionStr // TODO: parse via session.TelethonSession and save to FileStorage
+			// Decode first: the string is the only source of truth for the
+			// imported session, and a bad decode must not leave a file behind.
+			data, err := session.TelethonSession(sessionStr)
+			if err != nil {
+				return validationErr(fmt.Errorf("invalid session string: %w", err), "session")
+			}
 			dir := filepath.Join(home, "sessions", alias)
-			os.MkdirAll(dir, 0o700)
+			if err := os.MkdirAll(dir, 0o700); err != nil {
+				return fmt.Errorf("create session dir: %w", err)
+			}
+			sessionPath := filepath.Join(dir, "session.json")
+			loader := session.Loader{Storage: &session.FileStorage{Path: sessionPath}}
+			if err := loader.Save(cmd.Context(), data); err != nil {
+				return fmt.Errorf("save imported session: %w", err)
+			}
 			s, err := openStore(cmd.Context(), home)
 			if err != nil {
 				return err
 			}
 			defer s.DB().Close()
 			_, err = s.DB().ExecContext(cmd.Context(),
-				`INSERT OR REPLACE INTO tg_accounts (alias, session_dir, status) VALUES (?, ?, 'imported')`,
+				`INSERT OR REPLACE INTO tg_accounts (alias, session_dir, status) VALUES (?, ?, 'active')`,
 				alias, dir,
 			)
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(os.Stderr, "Session string stored for %q. Run 'accounts status %s' to validate.\n", alias, alias)
-			return nil
+			f := parseTelegramFlags(cmd)
+			return outResult(stdout(), f, map[string]any{
+				"alias":        alias,
+				"session_dir":  dir,
+				"dc_id":        data.DC,
+				"addr":         data.Addr,
+				"status":       "active",
+				"instructions": "run 'accounts status " + alias + "' to validate the imported session",
+			})
 		},
 	}
 	cmd.Flags().StringVar(&sessionStr, "session", "", "Telethon/Pyrogram session string")
 	cmd.Flags().StringVar(&alias, "alias", "", "alias for the imported account")
+	addTelegramFlags(cmd)
 	return cmd
 }

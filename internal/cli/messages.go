@@ -64,7 +64,7 @@ func newSendCmd(flags *rootFlags) *cobra.Command {
 			}
 			markAccountUsed(ctx, s, alias)
 			fmt.Fprintf(os.Stderr, "Sent message %d to %s.\n", msgID, ref)
-			return nil
+			return mutationResult(parseTelegramFlags(cmd), map[string]any{"msg_id": msgID, "chat": ref})
 		},
 	}
 	cmd.Flags().StringVar(&mediaPath, "media", "", "path to media file to attach")
@@ -125,7 +125,7 @@ func newForwardCmd(flags *rootFlags) *cobra.Command {
 			}
 			markAccountUsed(ctx, s, alias)
 			fmt.Fprintf(os.Stderr, "Forwarded %d messages.\n", len(msgIDs))
-			return nil
+			return mutationResult(parseTelegramFlags(cmd), map[string]any{"forwarded": len(msgIDs), "from": fromRef, "to": toRef})
 		},
 	}
 	return cmd
@@ -182,7 +182,7 @@ func newDeleteCmd(flags *rootFlags) *cobra.Command {
 				return err
 			}
 			fmt.Fprintf(os.Stderr, "Deleted %d messages.\n", len(msgIDs))
-			return nil
+			return mutationResult(parseTelegramFlags(cmd), map[string]any{"deleted": len(msgIDs), "revoke": revoke})
 		},
 	}
 	cmd.Flags().BoolVar(&revoke, "revoke", false, "delete for all participants")
@@ -234,7 +234,7 @@ func newReadCmd(flags *rootFlags) *cobra.Command {
 			}
 			markAccountUsed(ctx, s, alias)
 			fmt.Fprintf(os.Stderr, "Marked %s as read.\n", ref)
-			return nil
+			return mutationResult(parseTelegramFlags(cmd), map[string]any{"chat": ref, "read": true})
 		},
 	}
 }
@@ -279,7 +279,10 @@ func newReactCmd(flags *rootFlags) *cobra.Command {
 				}
 				return mtproto.SendReaction(ctx, api, peer, msgID, emoji)
 			})
-			return err
+			if err != nil {
+				return err
+			}
+			return mutationResult(parseTelegramFlags(cmd), map[string]any{"chat": ref, "msg_id": msgID, "emoji": emoji})
 		},
 	}
 }
@@ -324,7 +327,10 @@ func newEditCmd(flags *rootFlags) *cobra.Command {
 				}
 				return mtproto.EditMessage(ctx, api, peer, msgID, text)
 			})
-			return err
+			if err != nil {
+				return err
+			}
+			return mutationResult(parseTelegramFlags(cmd), map[string]any{"chat": ref, "msg_id": msgID})
 		},
 	}
 }
@@ -404,7 +410,7 @@ func newMediaCmd(flags *rootFlags) *cobra.Command {
 			} else {
 				fmt.Fprintf(os.Stderr, "No media found in message %d\n", msgID)
 			}
-			return nil
+			return mutationResult(parseTelegramFlags(cmd), map[string]any{"chat": ref, "msg_id": msgID, "path": savedPath, "downloaded": savedPath != ""})
 		},
 	}
 	return cmd

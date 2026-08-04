@@ -27,6 +27,10 @@ type telegramCmdFlags struct {
 	Limit   int
 	Select  string
 	Agent   bool
+	Compact bool
+	CSV     bool
+	Quiet   bool
+	Plain   bool
 }
 
 func addTelegramFlags(cmd *cobra.Command, defaults ...telegramCmdFlags) {
@@ -55,6 +59,14 @@ func parseTelegramFlags(cmd *cobra.Command) telegramCmdFlags {
 	// emit the {ok,data,metadata} success envelope (and structured errors)
 	// for agent consumption.
 	f.Agent, _ = cmd.Flags().GetBool("agent")
+	// Root output-format flags. The scaffold pipeline (printOutputWithFlags)
+	// honors these for generated commands; telegram commands must route
+	// through the same renderers so --compact/--csv/--quiet/--plain behave
+	// identically everywhere instead of being silently dropped.
+	f.Compact, _ = cmd.Flags().GetBool("compact")
+	f.CSV, _ = cmd.Flags().GetBool("csv")
+	f.Quiet, _ = cmd.Flags().GetBool("quiet")
+	f.Plain, _ = cmd.Flags().GetBool("plain")
 	return f
 }
 
@@ -115,19 +127,50 @@ func markAccountUsed(ctx context.Context, s *store.Store, alias string) {
 	)
 }
 
+// mutationResult emits a mutating command's machine-readable payload when the
+// caller is an agent or a pipe (auto-JSON per the scaffold heuristic), and
+// leaves interactive TTY output unchanged (prose stays on stderr only). This
+// closes the loop where `send --agent` left stdout empty and an agent could
+// not capture the msg_id it needed to reply/delete afterwards.
+func mutationResult(flags telegramCmdFlags, payload any) error {
+	if flags.JSON || flags.Agent || flags.Compact || flags.CSV || flags.Quiet || flags.Plain || !isTerminal(stdout()) {
+		return outResult(stdout(), flags, payload)
+	}
+	return nil
+}
+
 // outResult writes the result to the given writer in the requested format.
-// In JSON mode it honors the inherited --select flag (comma-separated field
-// paths) so the core Telegram read commands keep the "Filterable" contract
-// advertised in the README/SKILL instead of silently ignoring --select.
+// It honors the root output flags the same way the scaffold pipeline
+// (printOutputWithFlags) does, so telegram commands and generated commands
+// render --select/--compact/--csv/--quiet/--plain identically:
+//   - --select wins over --compact when both are set (an explicit field list
+//     is authoritative; the compact allow-list must not strip those fields).
+//   - --csv / --plain render from the JSON payload (after projection).
+//   - --quiet suppresses output entirely; the exit code communicates.
+//   - --agent mode nests the payload under {ok, data, metadata} so agents
+//     parse one uniform shape (.data) across every command; --json output
+//     stays raw for scripts and tests.
 func outResult(w io.Writer, flags telegramCmdFlags, v any) error {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	if flags.Select != "" {
+		raw = filterFields(raw, flags.Select)
+	} else if flags.Compact {
+		raw = compactFields(raw)
+	}
+	// --quiet: suppress all output, exit code communicates result.
+	if flags.Quiet {
+		return nil
+	}
+	if flags.CSV {
+		return printCSV(w, raw)
+	}
+	if flags.Plain {
+		return printPlain(w, raw)
+	}
 	if flags.JSON || !flags.Human {
-		raw, err := json.Marshal(v)
-		if err != nil {
-			return err
-		}
-		if flags.Select != "" {
-			raw = filterFields(raw, flags.Select)
-		}
 		// --agent mode nests the payload under {ok, data, metadata} so agents
 		// parse one uniform shape (.data) across every command. --json output
 		// stays raw for scripts and tests.

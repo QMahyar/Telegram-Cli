@@ -60,7 +60,13 @@ func LoginPhone(ctx context.Context, client *telegram.Client, phone string, code
 
 // LoginQR runs the QR-code login flow. showFn renders the QR token; loggedIn is
 // populated when the user scans the code on their phone.
-func LoginQR(ctx context.Context, client *telegram.Client, showFn QRFunc) error {
+//
+// The client passed in must have been created with NoUpdates disabled and an
+// update dispatcher attached (see Manager.DialAndRunUncheckedWithUpdates): the
+// UpdateLoginToken update is what unblocks the flow the moment the user scans,
+// instead of waiting for token expiry. Callers pass the dispatcher they
+// configured the client with.
+func LoginQR(ctx context.Context, client *telegram.Client, dispatcher tg.UpdateDispatcher, showFn QRFunc) error {
 	ac := client.Auth()
 	status, err := ac.Status(ctx)
 	if err != nil {
@@ -71,8 +77,9 @@ func LoginQR(ctx context.Context, client *telegram.Client, showFn QRFunc) error 
 	}
 
 	qr := client.QR()
+	loggedIn := qrlogin.OnLoginToken(dispatcher)
 	_, err = qr.Auth(ctx,
-		nil,
+		loggedIn,
 		func(ctx context.Context, token qrlogin.Token) error {
 			return showFn(ctx, token.URL())
 		},

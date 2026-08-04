@@ -116,7 +116,21 @@ func (m *Manager) DialAndRunWithUpdates(ctx context.Context, alias string, handl
 	if _, err := os.Stat(filepath.Join(dir, "session.json")); os.IsNotExist(err) {
 		return fmt.Errorf("account %q has no session — run: telegram-cli accounts add %s", alias, alias)
 	}
-	opts := m.clientOptsWithUpdates(dir, handler)
+	return m.dialWithUpdates(ctx, dir, handler, fn)
+}
+
+// DialAndRunUncheckedWithUpdates is like DialAndRunUnchecked but attaches a
+// live update handler. QR login needs the update loop running so the client
+// can observe UpdateLoginToken when the scanned code is accepted; with
+// NoUpdates=true the QR flow would stall until token expiry instead of
+// completing the moment the user scans.
+func (m *Manager) DialAndRunUncheckedWithUpdates(ctx context.Context, alias string, handler telegram.UpdateHandler, fn ClientFunc) error {
+	dir := m.SessionDir(alias)
+	return m.dialWithUpdates(ctx, dir, handler, fn)
+}
+
+func (m *Manager) dialWithUpdates(ctx context.Context, sessionDir string, handler telegram.UpdateHandler, fn ClientFunc) error {
+	opts := m.clientOptsWithUpdates(sessionDir, handler)
 	client := telegram.NewClient(m.APIID, m.APIHash, opts)
 	return client.Run(ctx, func(ctx context.Context) error {
 		return fn(ctx, client, client.API())

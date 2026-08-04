@@ -200,7 +200,7 @@ Fleet-wide delta of the last 24 hours grouped by account and chat.
 
 ## Auth Setup
 
-Create app credentials once at https://my.telegram.org/apps, then export TELEGRAM_API_ID and TELEGRAM_API_HASH. Add each account with 'telegram-cli accounts add --phone +1234567890 --alias work' — the CLI prompts for the login code sent to that phone and, if enabled, the 2FA password. Sessions are stored as per-account files in the config directory with restrictive permissions; never commit or share them. Accounts logged in via unofficial clients are monitored by Telegram under its API Terms of Service — this CLI paces itself and refuses spam-shaped defaults, but abusive use can still get accounts banned.
+Create app credentials once at https://my.telegram.org/apps, then export TELEGRAM_API_ID and TELEGRAM_API_HASH. Add each account with 'telegram-cli accounts add --phone +1234567890 --alias work' — the CLI prompts for the login code sent to that phone and, if enabled, the 2FA password. Non-interactive flows exist for agents: pass `--code` (and `--password` if 2FA is on) to skip the prompt, or `--qr` to log in by scanning a code with the Telegram app (Settings → Devices → Link Desktop Device). `accounts import --session <telethon-string> --alias <name>` imports an existing Telethon/Pyrogram string session. Sessions are stored as per-account files in the config directory with restrictive permissions; never commit or share them. Accounts logged in via unofficial clients are monitored by Telegram under its API Terms of Service — this CLI paces itself and refuses spam-shaped defaults, but abusive use can still get accounts banned.
 
 Run `telegram-cli doctor` to verify setup.
 
@@ -216,16 +216,18 @@ Add `--agent` to any command. Expands to: `--json --compact --no-input --no-colo
   ```
 - **Previewable** — `--dry-run` shows the request without sending
 - **Offline-friendly** — sync/search commands can use the local SQLite store when available
-- **Flag-driven** — every input is a flag or positional; the only interactive step is the login code/2FA during `accounts add` (inherent to Telegram auth)
+- **Flag-driven** — every input is a flag or positional; the login code/2FA during `accounts add` is the only inherent prompt, and it can be bypassed with `--code`/`--password` or `--qr` for agent-driven flows
 - **Write-safe** — mutating commands (`send`, `forward`, `delete`, `react`, `edit`, `broadcast`, `batch`) preview with `--dry-run`; without it they execute immediately. Read commands are non-mutating.
 
 ### Output shape
 
-Read commands emit JSON on stdout — a JSON array for lists, a JSON object for a single resource. In `--agent` mode the payload is nested under a uniform envelope: `{"ok": true, "data": <payload>, "metadata": {"source": "telegram"}}` — parse `.data` for the results and `.ok` to confirm success. Use `--select` to keep only the fields you need (comma-separated; dotted paths descend into nested structures and arrays traverse element-wise). A no-match `--select` is fail-open: full output is returned with a `warning: --select "x" matched no fields; valid fields: ...` line on stderr.
+Read commands emit JSON on stdout — a JSON array for lists, a JSON object for a single resource. In `--agent` mode the payload is nested under a uniform envelope: `{"ok": true, "data": <payload>, "metadata": {"source": "telegram"}}` — parse `.data` for the results and `.ok` to confirm success. Use `--select` to keep only the fields you need (comma-separated; dotted paths descend into nested structures and arrays traverse element-wise). A no-match `--select` is fail-open: full output is returned with a `warning: --select "x" matched no fields; valid fields: ...` line on stderr. The root output flags behave identically on Telegram commands and scaffolded commands: `--compact` keeps only high-gravity fields (and `--agent` implies it), `--csv` renders arrays as CSV, `--plain` as tab-separated rows, `--quiet` suppresses stdout and communicates via the exit code, and `--select` wins over `--compact` when both are set.
 
 ```bash
 telegram-cli chats --agent --select peer_id,title,unread_count
 ```
+
+Mutating commands (`send`, `forward`, `delete`, `read`, `react`, `edit`, `media`, `accounts add/use/rename/remove/import`) print human prose on stderr and, when stdout is a pipe or a machine flag (`--json`, `--agent`, `--csv`, ...) is set, also emit a machine-readable payload on stdout (e.g. `send` returns `{"msg_id": 123, "chat": "..."}`) so an agent can capture the identifiers it needs to follow up.
 
 The `--data-source` flag (`auto` | `live` | `local`) controls whether reads hit Telegram's servers (`live`), the local SQLite mirror (`local`), or prefer live with a local fallback (`auto`, the default). When stdout is a terminal AND no machine-format flag (`--json`, `--csv`, `--compact`, `--quiet`, `--plain`, `--select`) is set, a human-readable table is printed instead; piped/agent consumers and explicit-format runs get pure JSON on stdout.
 

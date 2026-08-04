@@ -73,7 +73,7 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 
 ## Authentication
 
-Create app credentials once at https://my.telegram.org/apps, then export TELEGRAM_API_ID and TELEGRAM_API_HASH. Add each account with 'telegram-cli accounts add --phone +1234567890 --alias work' — the CLI prompts for the login code sent to that phone and, if enabled, the 2FA password. Sessions are stored as per-account files in the config directory with restrictive permissions; never commit or share them. Accounts logged in via unofficial clients are monitored by Telegram under its API Terms of Service — this CLI paces itself and refuses spam-shaped defaults, but abusive use can still get accounts banned.
+Create app credentials once at https://my.telegram.org/apps, then export TELEGRAM_API_ID and TELEGRAM_API_HASH. Add each account with 'telegram-cli accounts add --phone +1234567890 --alias work' — the CLI prompts for the login code sent to that phone and, if enabled, the 2FA password. Non-interactive flows exist for agents: pass `--code` (and `--password` if 2FA is on) to skip the prompt, or `--qr` to log in by scanning a code with the Telegram app. `accounts import --session <telethon-string> --alias <name>` imports an existing Telethon/Pyrogram string session. Sessions are stored as per-account files in the config directory with restrictive permissions; never commit or share them. Accounts logged in via unofficial clients are monitored by Telegram under its API Terms of Service — this CLI paces itself and refuses spam-shaped defaults, but abusive use can still get accounts banned.
 
 ## Quick Start
 
@@ -334,7 +334,7 @@ telegram-cli mirror --agent
 
 This CLI is designed for AI agent consumption:
 
-- **Flag-driven** - every input is a flag or positional; the only interactive step is the login code/2FA during `accounts add` (inherent to Telegram auth)
+- **Flag-driven** - every input is a flag or positional; the login code/2FA during `accounts add` is the only inherent prompt, and it can be bypassed with `--code`/`--password` or `--qr` for agent-driven flows
 - **Pipeable** - `--json` output to stdout, errors to stderr
 - **Filterable** - `--select id,name` returns only fields you need
 - **Previewable** - `--dry-run` shows the request without sending
