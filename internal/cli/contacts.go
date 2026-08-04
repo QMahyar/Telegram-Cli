@@ -35,7 +35,8 @@ func newContactsCmd(flags *rootFlags) *cobra.Command {
 		Use:         "contacts [query]",
 		Short:       "List or search Telegram contacts",
 		Annotations: map[string]string{"mcp:read-only": "true", "cli:api-resource": "true"},
-		Example:     "  tele contacts\n  tele contacts alice --limit 10",
+		Args:        cobra.MaximumNArgs(1),
+		Example:     "  telegram-cli contacts\n  telegram-cli contacts alice --limit 10",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if dryRunOK(flags) {
 				return writeDryRun(cmd.OutOrStdout(), flags, "list search contacts")

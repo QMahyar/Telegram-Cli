@@ -22,8 +22,8 @@ func newNovelBroadcastCmd(flags *rootFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "broadcast",
 		Short: "Post one message to multiple chats, paced to avoid flood",
-		Example: `  tele broadcast --text "Hello everyone!" @channel1 @channel2
-  tele broadcast --media photo.jpg --text "Check this out" @group1`,
+		Example: `  telegram-cli broadcast --text "Hello everyone!" @channel1 @channel2
+  telegram-cli broadcast --media photo.jpg --text "Check this out" @group1`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if dryRunOK(flags) {
 				return writeDryRun(cmd.OutOrStdout(), flags, "broadcast message")
@@ -58,6 +58,14 @@ func newNovelBroadcastCmd(flags *rootFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// Mass-visible write: require explicit --yes (or --dry-run, handled
+			// above). --agent implies --yes, so agent-driven broadcasts proceed;
+			// a bare `broadcast` from a human is gated with a plan + exit 6.
+			if !flags.yes {
+				fmt.Fprintf(cmd.ErrOrStderr(), "would broadcast to %d chat(s) as %s\n", len(args), alias)
+				return confirmationErr(fmt.Errorf("broadcast requires --yes confirmation"), "re-run with --yes to proceed, or --dry-run to preview")
+			}
+
 			// Record job
 			targets := strings.Join(args, ",")
 			res, _ := s.DB().ExecContext(ctx,
@@ -176,6 +184,14 @@ func newBatchForwardCmd(flags *rootFlags) *cobra.Command {
 			mgr, err := openManager(home)
 			if err != nil {
 				return err
+			}
+
+			// Mass-visible write: require explicit --yes (or --dry-run, handled
+			// above). --agent implies --yes; a bare `batch forward` from a human
+			// is gated with a plan + exit 6.
+			if !flags.yes {
+				fmt.Fprintf(cmd.ErrOrStderr(), "would forward %d message(s) from %s to %d target(s)\n", len(msgIDs), fromRef, len(to))
+				return confirmationErr(fmt.Errorf("batch forward requires --yes confirmation"), "re-run with --yes to proceed, or --dry-run to preview")
 			}
 
 			// Record the job.

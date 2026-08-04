@@ -17,6 +17,7 @@ func newCapabilitiesCmd(flags *rootFlags) *cobra.Command {
 		Use:         "capabilities",
 		Short:       "Show what this CLI can do",
 		Annotations: map[string]string{"mcp:read-only": "true"},
+		Args:        cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var caps []capabilityEntry
 			for _, c := range cmd.Root().Commands() {

@@ -200,13 +200,13 @@ Fleet-wide delta of the last 24 hours grouped by account and chat.
 
 ## Auth Setup
 
-Create app credentials once at https://my.telegram.org/apps, then export TELEGRAM_API_ID and TELEGRAM_API_HASH. Add each account with 'telegram-cli accounts add <alias>' — a QR code renders in the terminal (scan with Telegram → Settings → Devices → Link Desktop Device), or use --phone for code login with 2FA fallback. Sessions are stored as per-account files in the config directory with restrictive permissions; never commit or share them. Accounts logged in via unofficial clients are monitored by Telegram under its API Terms of Service — this CLI paces itself and refuses spam-shaped defaults, but abusive use can still get accounts banned.
+Create app credentials once at https://my.telegram.org/apps, then export TELEGRAM_API_ID and TELEGRAM_API_HASH. Add each account with 'telegram-cli accounts add --phone +1234567890 --alias work' — the CLI prompts for the login code sent to that phone and, if enabled, the 2FA password. Sessions are stored as per-account files in the config directory with restrictive permissions; never commit or share them. Accounts logged in via unofficial clients are monitored by Telegram under its API Terms of Service — this CLI paces itself and refuses spam-shaped defaults, but abusive use can still get accounts banned.
 
 Run `telegram-cli doctor` to verify setup.
 
 ## Agent Mode
 
-Add `--agent` to any command. Expands to: `--json --compact --no-input --no-color --yes`.
+Add `--agent` to any command. Expands to: `--json --compact --no-input --no-color --yes`. It also switches to machine-built output: success envelopes `{ok:true, data, metadata}` on stdout, and errors emit `{ok:false, error:{type, exit_code, hint, details}}` on stderr.
 
 - **Pipeable** — JSON on stdout, errors on stderr
 - **Filterable** — `--select` keeps a subset of fields. Dotted paths descend into nested structures; arrays traverse element-wise. Critical for keeping context small on verbose APIs:
@@ -216,21 +216,18 @@ Add `--agent` to any command. Expands to: `--json --compact --no-input --no-colo
   ```
 - **Previewable** — `--dry-run` shows the request without sending
 - **Offline-friendly** — sync/search commands can use the local SQLite store when available
-- **Non-interactive** — never prompts, every input is a flag
-- **Read-only** — do not use this CLI for create, update, delete, publish, comment, upvote, invite, order, send, or other mutating requests
+- **Flag-driven** — every input is a flag or positional; the only interactive step is the login code/2FA during `accounts add` (inherent to Telegram auth)
+- **Write-safe** — mutating commands (`send`, `forward`, `delete`, `react`, `edit`, `broadcast`, `batch`) preview with `--dry-run`; without it they execute immediately. Read commands are non-mutating.
 
-### Response envelope
+### Output shape
 
-Commands that read from the local store or the API wrap output in a provenance envelope:
+Read commands emit JSON on stdout — a JSON array for lists, a JSON object for a single resource. In `--agent` mode the payload is nested under a uniform envelope: `{"ok": true, "data": <payload>, "metadata": {"source": "telegram"}}` — parse `.data` for the results and `.ok` to confirm success. Use `--select` to keep only the fields you need (comma-separated; dotted paths descend into nested structures and arrays traverse element-wise). A no-match `--select` is fail-open: full output is returned with a `warning: --select "x" matched no fields; valid fields: ...` line on stderr.
 
-```json
-{
-  "meta": {"source": "live" | "local", "synced_at": "...", "reason": "..."},
-  "results": <data>
-}
+```bash
+telegram-cli chats --agent --select peer_id,title,unread_count
 ```
 
-Parse `.results` for data and `.meta.source` to know whether it's live or local. A human-readable `N results (live)` summary is printed to stderr only when stdout is a terminal AND no machine-format flag (`--json`, `--csv`, `--compact`, `--quiet`, `--plain`, `--select`) is set — piped/agent consumers and explicit-format runs get pure JSON on stdout.
+The `--data-source` flag (`auto` | `live` | `local`) controls whether reads hit Telegram's servers (`live`), the local SQLite mirror (`local`), or prefer live with a local fallback (`auto`, the default). When stdout is a terminal AND no machine-format flag (`--json`, `--csv`, `--compact`, `--quiet`, `--plain`, `--select`) is set, a human-readable table is printed instead; piped/agent consumers and explicit-format runs get pure JSON on stdout.
 
 ## Paths and state
 
@@ -498,6 +495,7 @@ Explicit flags always win over profile values; profile values win over defaults.
 | 2 | Usage error (wrong arguments) |
 | 3 | Resource not found |
 | 5 | API error (upstream issue) |
+| 6 | Confirmation required (irreversible/visible write — re-run with `--yes`) |
 | 7 | Rate limited (wait and retry) |
 | 10 | Config error |
 

@@ -110,7 +110,7 @@ func Execute() (retErr error) {
 	defer finalizePlatformInvocation(&flags, &retErr)
 
 	executedCmd, err := rootCmd.ExecuteC()
-	var journalFailedFlag, journalSuggestedFlag string
+	var journalFailedFlag, journalSuggestedFlag, hintMsg string
 	defer func() {
 		journalInvocation(&flags, rootCmd, executedCmd, retErr, journalFailedFlag, journalSuggestedFlag)
 		// Derivation runs after the journal write so the entry this
@@ -132,14 +132,11 @@ func Execute() (retErr error) {
 			// these up.
 			journalFailedFlag = flagStr
 			if suggestion := suggestFlag(flagStr, rootCmd); suggestion != "" {
-				// Cobra already printed `Error: unknown flag: --foob` before
-				// returning; the wrap below attaches the hint to err.Error()
-				// for downstream consumers and exit-code classification, but
-				// would never reach stderr now that main.go no longer prints
-				// err. Emit the hint explicitly so the suggestion still
-				// shows up under Cobra's error line.
-				fmt.Fprintf(os.Stderr, "hint: did you mean --%s?\n", suggestion)
-				err = fmt.Errorf("%w\nhint: did you mean --%s?", err, suggestion)
+				// Attach the did-you-mean as a structured hint (emitError
+				// renders it for humans and in the --agent JSON envelope)
+				// instead of printing prose here, so stderr is a single
+				// coherent error emission.
+				hintMsg = "did you mean --" + suggestion + "?"
 				journalSuggestedFlag = "--" + suggestion
 			}
 		}
@@ -157,7 +154,16 @@ func Execute() (retErr error) {
 		// runs. Without this wrap, ExitCode() falls through to the
 		// default and emits 1 — clobbering the conventional code-2 for
 		// usage errors that the helpers.go contract already promises.
-		return usageErr(err)
+		err = usageErr(err)
+	}
+	if hintMsg != "" {
+		err = withHint(err, hintMsg)
+	}
+	if err != nil {
+		// SilenceErrors is set on the root, so cobra does not print the
+		// error itself; emitError renders a structured JSON envelope on
+		// stderr in --agent mode and "Error: <msg>" prose otherwise.
+		emitError(os.Stderr, err, &flags)
 	}
 	return err
 }
@@ -205,7 +211,7 @@ func isCobraUsageError(err error) bool {
 
 func newRootCmd(flags *rootFlags) *cobra.Command {
 	rootCmd := &cobra.Command{
-		Use:   "tele",
+		Use:   "telegram-cli",
 		Short: `Telegram CLI — Every Telegram account you own in one terminal: unified sync and search, flood-aware cross-account broadcasts, and a…`,
 		Long: `Telegram CLI — Every Telegram account you own in one terminal: unified sync and search, flood-aware cross-account broadcasts, and a schema-driven raw gateway no other Telegram CLI offers.
 
@@ -224,8 +230,9 @@ Highlights (not in the official API docs):
 Agent mode: add --agent to any command for JSON output + non-interactive mode.
 Health check: run 'telegram-cli doctor' to verify auth and connectivity.
 See README.md or the bundled SKILL.md for recipes.`,
-		SilenceUsage: true,
-		Version:      version,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		Version:       version,
 	}
 	rootCmd.SetVersionTemplate("telegram-cli {{ .Version }}\n")
 
@@ -560,6 +567,28 @@ func argsDisableLearn(args []string) bool {
 			return true
 		}
 		if v, ok := strings.CutPrefix(tok, "--no-learn="); ok {
+			switch strings.ToLower(strings.TrimSpace(v)) {
+			case "false", "0", "no":
+			default:
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// argsAgentRequested reports whether --agent appears anywhere in argv. Cobra
+// fails flag parsing at the first unknown flag (before later flags bind), so a
+// typo'd flag with --agent after it (e.g. `chats --bogus --agent`) leaves
+// rootFlags.agent false. emitError uses this to still emit a structured error
+// envelope in that case, matching the agent-cli-builder contract regardless of
+// flag order.
+func argsAgentRequested(args []string) bool {
+	for _, tok := range args {
+		if tok == "--agent" {
+			return true
+		}
+		if v, ok := strings.CutPrefix(tok, "--agent="); ok {
 			switch strings.ToLower(strings.TrimSpace(v)) {
 			case "false", "0", "no":
 			default:

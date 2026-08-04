@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
 	"io"
 	"os"
 	"path/filepath"
@@ -43,6 +44,27 @@ func formatCLIParamValue(v any) string {
 	default:
 		return fmt.Sprintf("%v", v)
 	}
+}
+
+// successEnvelope is the agent-facing success shape emitted in --agent mode:
+// {ok:true, data:<payload>, metadata:{source,...}}. stdout stays pure data and
+// the payload is nested under .data so an agent that learned this shape once
+// never relearns it (the agent-cli-builder output contract).
+type successEnvelope struct {
+	Ok       bool            `json:"ok"`
+	Data     json.RawMessage `json:"data"`
+	Metadata map[string]any  `json:"metadata"`
+}
+
+// wrapSuccess nests an already-marshaled payload under {ok, data, metadata} for
+// --agent mode. source is a provenance label (e.g. "telegram", "local").
+func wrapSuccess(data json.RawMessage, source string) json.RawMessage {
+	env := successEnvelope{Ok: true, Data: data, Metadata: map[string]any{}}
+	if source != "" {
+		env.Metadata["source"] = source
+	}
+	b, _ := json.Marshal(env)
+	return b
 }
 
 // noColor is set by the --no-color flag
@@ -106,18 +128,118 @@ func yellow(s string) string {
 	return "\033[33m" + s + "\033[0m"
 }
 
+// cliError is the CLI's structured error. It carries the process exit code
+// plus the agent-facing taxonomy fields (type/subtype/hint/details) so an
+// agent can branch mechanically instead of parsing English prose. The
+// envelope is emitted in --agent mode (see emitError); in human mode only
+// Error() prose (and an optional hint line) is shown.
 type cliError struct {
-	code int
-	err  error
+	code        int
+	err         error
+	errorType   string         // category: usage|validation|not_found|auth|api|rate_limited|config|confirmation_required
+	subtype     string         // declared subtype (e.g. "unknown_flag", "flood_wait")
+	hint        string         // one-line recovery suggestion
+	suggestions []string       // did-you-mean candidates
+	details     map[string]any // retryable, retry_after_ms, missing_scopes, param, valid_values, upstream_code, request_id
 }
 
 func (e *cliError) Error() string { return e.err.Error() }
 func (e *cliError) Unwrap() error { return e.err }
 
-func usageErr(err error) error  { return &cliError{code: 2, err: err} }
-func authErr(err error) error   { return &cliError{code: 4, err: err} }
-func apiErr(err error) error    { return &cliError{code: 5, err: err} }
-func configErr(err error) error { return &cliError{code: 10, err: err} }
+func usageErr(err error) error  { return &cliError{code: 2, err: err, errorType: "usage"} }
+func authErr(err error) error   { return &cliError{code: 4, err: err, errorType: "auth"} }
+func apiErr(err error) error    { return &cliError{code: 5, err: err, errorType: "api"} }
+func configErr(err error) error { return &cliError{code: 10, err: err, errorType: "config"} }
+
+// notFoundErr signals a missing resource (exit 3).
+func notFoundErr(err error) error { return &cliError{code: 3, err: err, errorType: "not_found"} }
+
+// validationErr signals bad input (exit 2) with the offending param and the
+// accepted values so an agent can self-correct without reading prose.
+func validationErr(err error, param string, validValues ...string) error {
+	details := map[string]any{}
+	if param != "" {
+		details["param"] = param
+	}
+	if len(validValues) > 0 {
+		details["valid_values"] = validValues
+	}
+	return &cliError{code: 2, err: err, errorType: "validation", details: details}
+}
+
+// rateLimitErr signals a throttled request (exit 7). retryAfterMs carries
+// the server-advised cooldown so an agent can sleep and retry mechanically.
+func rateLimitErr(err error, retryAfterMs int64) error {
+	return &cliError{code: 7, err: err, errorType: "rate_limited",
+		details: map[string]any{"retryable": true, "retry_after_ms": retryAfterMs}}
+}
+
+// confirmationErr signals an irreversible/visible write that was previewed
+// but not confirmed (exit 6). The agent re-runs the same argv with --yes.
+func confirmationErr(err error, hint string) error {
+	return &cliError{code: 6, err: err, errorType: "confirmation_required", hint: hint}
+}
+
+// withHint attaches a recovery hint to an existing *cliError (no-op for
+// other error types so it is safe to chain on any err).
+func withHint(err error, hint string) error {
+	var ce *cliError
+	if As(err, &ce) {
+		ce.hint = hint
+		return ce
+	}
+	return err
+}
+
+// errorEnvelope is the agent-facing error shape, emitted on stderr in
+// --agent mode so stdout stays pure data. Mirrors the agent-cli-builder
+// output contract: {ok:false, error:{type, exit_code, message, hint, ...}}.
+type errorEnvelope struct {
+	Ok    bool      `json:"ok"`
+	Error errorBody `json:"error"`
+}
+
+type errorBody struct {
+	Type        string         `json:"type"`
+	Subtype     string         `json:"subtype,omitempty"`
+	ExitCode    int            `json:"exit_code"`
+	Message     string         `json:"message"`
+	Hint        string         `json:"hint,omitempty"`
+	Suggestions []string       `json:"suggestions,omitempty"`
+	Details     map[string]any `json:"details,omitempty"`
+}
+
+// emitError writes err in the mode-appropriate form: a JSON envelope on stderr
+// in --agent mode, "Error: <msg>" prose (plus an optional hint line) for
+// humans. Called from Execute() once SilenceErrors is set so cobra does not
+// also print. Never returns an error: error-while-emitting is silently
+// swallowed because the caller already owns the original error path.
+func emitError(w io.Writer, err error, flags *rootFlags) {
+	if err == nil {
+		return
+	}
+	exitCode := ExitCode(err)
+	body := errorBody{Type: "runtime", ExitCode: exitCode, Message: err.Error()}
+	var ce *cliError
+	if As(err, &ce) {
+		if ce.errorType != "" {
+			body.Type = ce.errorType
+		}
+		body.Subtype = ce.subtype
+		body.ExitCode = ce.code
+		body.Hint = ce.hint
+		body.Suggestions = ce.suggestions
+		body.Details = ce.details
+	}
+	if flags != nil && (flags.agent || argsAgentRequested(os.Args[1:])) {
+		_ = json.NewEncoder(w).Encode(errorEnvelope{Ok: false, Error: body})
+		return
+	}
+	fmt.Fprintf(w, "Error: %v\n", err)
+	if body.Hint != "" {
+		fmt.Fprintf(w, "hint: %s\n", body.Hint)
+	}
+}
 
 // dryRunOK reports whether the command should short-circuit without doing any
 // real work because --dry-run was set. The verify pipeline probes hand-written
@@ -181,7 +303,11 @@ func boundCtx(parent context.Context, flags *rootFlags) (context.Context, contex
 // 2 in machine output (--json/--agent) but prints cobra's help for humans.
 func parentNoSubcommandRunE(flags *rootFlags) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
-		machine := flags != nil && flags.asJSON
+		// stdout emission is for --json (non-agent) consumers only; in --agent
+		// mode the structured error envelope is emitted on stderr by emitError
+		// so stdout stays pure data.
+		machine := flags != nil && flags.asJSON && !flags.agent
+		agent := flags != nil && flags.agent
 		subs := make([]string, 0, len(cmd.Commands()))
 		for _, c := range cmd.Commands() {
 			if c.IsAvailableCommand() && c.Name() != "help" {
@@ -199,11 +325,13 @@ func parentNoSubcommandRunE(flags *rootFlags) func(*cobra.Command, []string) err
 			}
 			return usageErr(fmt.Errorf("unknown subcommand %q for %q\nRun '%s --help' for available subcommands", args[0], cmd.CommandPath(), cmd.CommandPath()))
 		}
-		if machine {
-			_ = json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
-				"error":             "subcommand required",
-				"valid_subcommands": subs,
-			})
+		if machine || agent {
+			if machine {
+				_ = json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
+					"error":             "subcommand required",
+					"valid_subcommands": subs,
+				})
+			}
 			return usageErr(fmt.Errorf("subcommand required for %q", cmd.CommandPath()))
 		}
 		return cmd.Help()

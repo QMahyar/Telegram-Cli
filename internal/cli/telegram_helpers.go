@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -24,6 +25,8 @@ type telegramCmdFlags struct {
 	JSON    bool
 	Human   bool
 	Limit   int
+	Select  string
+	Agent   bool
 }
 
 func addTelegramFlags(cmd *cobra.Command, defaults ...telegramCmdFlags) {
@@ -43,6 +46,15 @@ func parseTelegramFlags(cmd *cobra.Command) telegramCmdFlags {
 	f.JSON, _ = cmd.Flags().GetBool("json")
 	f.Human, _ = cmd.Flags().GetBool("human")
 	f.Limit, _ = cmd.Flags().GetInt("limit")
+	// --select is a root persistent flag; honor it here so the core Telegram
+	// read commands (chats, messages, contacts, ...) filter fields the same
+	// way the scaffolded commands do via printJSONFiltered, instead of
+	// silently ignoring --select.
+	f.Select, _ = cmd.Flags().GetString("select")
+	// --agent is a root persistent flag; honor it here so telegram commands
+	// emit the {ok,data,metadata} success envelope (and structured errors)
+	// for agent consumption.
+	f.Agent, _ = cmd.Flags().GetBool("agent")
 	return f
 }
 
@@ -104,11 +116,31 @@ func markAccountUsed(ctx context.Context, s *store.Store, alias string) {
 }
 
 // outResult writes the result to the given writer in the requested format.
+// In JSON mode it honors the inherited --select flag (comma-separated field
+// paths) so the core Telegram read commands keep the "Filterable" contract
+// advertised in the README/SKILL instead of silently ignoring --select.
 func outResult(w io.Writer, flags telegramCmdFlags, v any) error {
 	if flags.JSON || !flags.Human {
-		enc := json.NewEncoder(w)
-		enc.SetIndent("", "  ")
-		return enc.Encode(v)
+		raw, err := json.Marshal(v)
+		if err != nil {
+			return err
+		}
+		if flags.Select != "" {
+			raw = filterFields(raw, flags.Select)
+		}
+		// --agent mode nests the payload under {ok, data, metadata} so agents
+		// parse one uniform shape (.data) across every command. --json output
+		// stays raw for scripts and tests.
+		if flags.Agent || argsAgentRequested(os.Args[1:]) {
+			raw = wrapSuccess(raw, "telegram")
+		}
+		var buf bytes.Buffer
+		if err := json.Indent(&buf, raw, "", "  "); err != nil {
+			return err
+		}
+		buf.WriteByte('\n')
+		_, err = w.Write(buf.Bytes())
+		return err
 	}
 	return outTable(w, v)
 }

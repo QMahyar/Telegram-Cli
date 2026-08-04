@@ -16,6 +16,7 @@ func newChatsCmd(flags *rootFlags) *cobra.Command {
 		Use:         "chats",
 		Short:       "List and inspect Telegram chats (dialogs)",
 		Annotations: map[string]string{"mcp:read-only": "true", "cli:api-resource": "true"},
+		Args:        cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if dryRunOK(flags) {
 				return writeDryRun(cmd.OutOrStdout(), flags, "list chats")

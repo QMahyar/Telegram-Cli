@@ -167,6 +167,14 @@ func newDeleteCmd(flags *rootFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// Irreversible write: require explicit --yes (or --dry-run, handled
+			// above). --agent implies --yes, so agent-driven deletes proceed; a
+			// bare `delete` from a human is gated with a plan + exit 6.
+			if !flags.yes {
+				fmt.Fprintf(cmd.ErrOrStderr(), "would delete %d message(s) from %s (revoke=%v)\n", len(msgIDs), args[0], revoke)
+				return confirmationErr(fmt.Errorf("delete requires --yes confirmation"), "re-run with --yes to proceed, or --dry-run to preview")
+			}
+
 			err = mgr.DialAndRun(ctx, alias, func(ctx context.Context, client *telegram.Client, api *tg.Client) error {
 				return mtproto.DeleteMessages(ctx, api, msgIDs, revoke)
 			})
@@ -185,8 +193,8 @@ func newReadCmd(flags *rootFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:   "read <chat>",
 		Short: "Mark all messages in a chat as read",
-		Example: `  tele read @username
-  tele read me`,
+		Example: `  telegram-cli read @username
+  telegram-cli read me`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if dryRunOK(flags) {
 				return writeDryRun(cmd.OutOrStdout(), flags, "mark as read")

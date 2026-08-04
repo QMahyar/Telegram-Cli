@@ -32,8 +32,8 @@ func newExportCmd(flags *rootFlags) *cobra.Command {
 		Use:         "export <chat> [out-dir]",
 		Short:       "Export chat history to a local JSONL file",
 		Annotations: map[string]string{"mcp:read-only": "true"},
-		Example: `  tele export @channel ~/exports
-  tele export 7528129992 . --limit 200`,
+		Example: `  telegram-cli export @channel ~/exports
+  telegram-cli export 7528129992 . --limit 200`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if dryRunOK(flags) {
 				return writeDryRun(cmd.OutOrStdout(), flags, "export chat history")

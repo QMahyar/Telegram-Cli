@@ -79,8 +79,8 @@ func newTemplatesAddCmd(flags *rootFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add <name>",
 		Short: "Create or update a broadcast template",
-		Example: `  tele templates add welcome --text "Welcome to the group!"
-  tele templates add promo --text "Flash sale ends soon!"`,
+		Example: `  telegram-cli templates add welcome --text "Welcome to the group!"
+  telegram-cli templates add promo --text "Flash sale ends soon!"`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return cmd.Help()

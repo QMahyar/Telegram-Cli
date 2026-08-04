@@ -41,8 +41,8 @@ func newAccountsAddCmd(flags *rootFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add",
 		Short: "Add a new Telegram account (phone + code login)",
-		Example: `  tele accounts add --phone +1234567890 --alias work
-  tele accounts add --phone +98912345678 --alias personal`,
+		Example: `  telegram-cli accounts add --phone +1234567890 --alias work
+  telegram-cli accounts add --phone +98912345678 --alias personal`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if alias == "" {
 				return fmt.Errorf("--alias is required")

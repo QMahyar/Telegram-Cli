@@ -26,9 +26,9 @@ func newRawCmd(flags *rootFlags) *cobra.Command {
 to the binary wire format and back. This is the schema-driven raw gateway:
 anything the Telegram TL layer exposes can be called here, bypassing the
 hand-written friendly commands.`,
-		Example: `  tele raw help.getNearestDc
-  tele raw account.getAccountTTL
-  tele raw messages.getDialogs '{"limit": 10}'`,
+		Example: `  telegram-cli raw help.getNearestDc
+  telegram-cli raw account.getAccountTTL
+  telegram-cli raw messages.getDialogs '{"limit": 10}'`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if dryRunOK(flags) {
 				return writeDryRun(cmd.OutOrStdout(), flags, "invoke raw MTProto method "+args[0])

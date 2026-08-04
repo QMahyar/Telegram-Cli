@@ -8,8 +8,6 @@ Created by [@QMahyar](https://github.com/QMahyar).
 
 ## Install
 
-## Install
-
 Build both binaries from source (requires Go 1.26.5 or newer):
 
 ```bash
@@ -75,7 +73,7 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 
 ## Authentication
 
-Create app credentials once at https://my.telegram.org/apps, then export TELEGRAM_API_ID and TELEGRAM_API_HASH. Add each account with 'telegram-cli accounts add <alias>' — a QR code renders in the terminal (scan with Telegram → Settings → Devices → Link Desktop Device), or use --phone for code login with 2FA fallback. Sessions are stored as per-account files in the config directory with restrictive permissions; never commit or share them. Accounts logged in via unofficial clients are monitored by Telegram under its API Terms of Service — this CLI paces itself and refuses spam-shaped defaults, but abusive use can still get accounts banned.
+Create app credentials once at https://my.telegram.org/apps, then export TELEGRAM_API_ID and TELEGRAM_API_HASH. Add each account with 'telegram-cli accounts add --phone +1234567890 --alias work' — the CLI prompts for the login code sent to that phone and, if enabled, the 2FA password. Sessions are stored as per-account files in the config directory with restrictive permissions; never commit or share them. Accounts logged in via unofficial clients are monitored by Telegram under its API Terms of Service — this CLI paces itself and refuses spam-shaped defaults, but abusive use can still get accounts banned.
 
 ## Quick Start
 
@@ -84,12 +82,12 @@ Create app credentials once at https://my.telegram.org/apps, then export TELEGRA
 telegram-cli capabilities list --json --limit 5
 
 
-# Registers your first account by scanning a QR code; creates the session file.
-telegram-cli accounts add work --qr
+# Registers your first account by phone; the CLI prompts for the login code sent to it.
+telegram-cli accounts add --phone +1234567890 --alias work
 
 
 # Dry-run shows the MTProto calls that would run; drop --dry-run to list real dialogs.
-telegram-cli chats list --json --limit 10 --dry-run
+telegram-cli chats --json --limit 10 --dry-run
 
 
 # Previews an incremental sync of dialogs and messages into the local mirror.
@@ -123,7 +121,7 @@ These capabilities aren't available in any other tool for this API.
   _When bulk-downloading or bulk-forwarding across several accounts, the job survives interruptions and reports exactly what succeeded per account._
 
   ```bash
-  telegram-cli batch download --chat @releases --limit 20 --account work --dry-run --json
+  telegram-cli batch forward @releases 123 124 --to @updates --account work --dry-run --json
   ```
 - **`jobs`** — Queue any broadcast or batch operation for a future time; jobs persist across restarts and fire via the scheduler loop or one-shot OS tasks.
 
@@ -336,15 +334,16 @@ telegram-cli mirror --agent
 
 This CLI is designed for AI agent consumption:
 
-- **Non-interactive** - never prompts, every input is a flag
+- **Flag-driven** - every input is a flag or positional; the only interactive step is the login code/2FA during `accounts add` (inherent to Telegram auth)
 - **Pipeable** - `--json` output to stdout, errors to stderr
 - **Filterable** - `--select id,name` returns only fields you need
 - **Previewable** - `--dry-run` shows the request without sending
-- **Read-only by default** - this CLI does not create, update, delete, publish, send, or mutate remote resources
+- **Uniform envelope under `--agent`** - success wraps in `{ok:true,data,metadata}` on stdout; errors emit `{ok:false,error:{type,exit_code,hint}}` on stderr
+- **Write-safe** - mutating commands (`send`, `forward`, `delete`, `react`, `edit`, `broadcast`, `batch`) preview with `--dry-run`; without it they execute immediately. Read commands are non-mutating.
 - **Offline-friendly** - sync/search commands can use the local SQLite store when available
 - **Agent-safe by default** - no colors or formatting unless `--human-friendly` is set
 
-Exit codes: `0` success, `2` usage error, `3` not found, `5` API error, `7` rate limited, `10` config error.
+Exit codes: `0` success, `2` usage error, `3` not found, `5` API error, `6` confirmation required, `7` rate limited, `10` config error.
 
 ## Health Check
 
