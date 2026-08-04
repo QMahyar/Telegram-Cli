@@ -79,7 +79,7 @@ Create app credentials once at https://my.telegram.org/apps, then export TELEGRA
 
 ```bash
 # Works offline with no credentials — proves the binary and shows the TL method registry.
-telegram-cli capabilities list --json --limit 5
+telegram-cli capabilities --json --limit 5
 
 
 # Registers your first account by phone; the CLI prompts for the login code sent to it.

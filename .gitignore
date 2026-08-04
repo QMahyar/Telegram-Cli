@@ -6,3 +6,5 @@ telegram-cli.exe
 *.db-shm
 .env
 !.env.example
+
+export/
