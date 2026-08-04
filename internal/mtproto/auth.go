@@ -3,7 +3,6 @@ package mtproto
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/telegram/auth"
@@ -20,6 +19,31 @@ type PasswordFunc func(ctx context.Context) (string, error)
 // QRFunc is called to display the QR URL to the user.
 type QRFunc func(ctx context.Context, url string) error
 
+// phoneFlowAdapter adapts a phone number plus code/password callbacks into the
+// auth.UserAuthenticator gotd's auth.Flow drives. Account sign-up is rejected
+// (the same no-sign-up stance auth.Constant takes). The key point: gotd's Flow
+// invokes Password() only when Telegram reports the account needs a 2FA
+// password, so pwdFn (and the CLI's --password flag) is actually reached —
+// the previous explicit `needsPassword(err)` post-check could never fire
+// because err was already consumed by the Status() call above it.
+type phoneFlowAdapter struct {
+	phone string
+	code  CodeFunc
+	pwd   PasswordFunc
+}
+
+func (a phoneFlowAdapter) Phone(context.Context) (string, error) { return a.phone, nil }
+func (a phoneFlowAdapter) Code(ctx context.Context, _ *tg.AuthSentCode) (string, error) {
+	return a.code(ctx, a.phone)
+}
+func (a phoneFlowAdapter) Password(ctx context.Context) (string, error) { return a.pwd(ctx) }
+func (a phoneFlowAdapter) SignUp(context.Context) (auth.UserInfo, error) {
+	return auth.UserInfo{}, fmt.Errorf("telegram-cli does not support creating new accounts")
+}
+func (a phoneFlowAdapter) AcceptTermsOfService(ctx context.Context, tos tg.HelpTermsOfService) error {
+	return &auth.SignUpRequired{TermsOfService: tos}
+}
+
 // LoginPhone runs the phone + code + optional 2FA flow for the given phone number.
 func LoginPhone(ctx context.Context, client *telegram.Client, phone string, codeFn CodeFunc, pwdFn PasswordFunc) error {
 	ac := client.Auth()
@@ -32,28 +56,11 @@ func LoginPhone(ctx context.Context, client *telegram.Client, phone string, code
 	}
 
 	f := auth.NewFlow(
-		auth.Constant(phone, "", auth.CodeAuthenticatorFunc(func(ctx context.Context, sentCode *tg.AuthSentCode) (string, error) {
-			return codeFn(ctx, phone)
-		})),
+		phoneFlowAdapter{phone: phone, code: codeFn, pwd: pwdFn},
 		auth.SendCodeOptions{},
 	)
 	if err := ac.IfNecessary(ctx, f); err != nil {
 		return fmt.Errorf("auth flow: %w", err)
-	}
-
-	// Check if 2FA is needed.
-	status2, err := ac.Status(ctx)
-	if err != nil {
-		return fmt.Errorf("auth status after code: %w", err)
-	}
-	if !status2.Authorized && needsPassword(err) {
-		pwd, pwdErr := pwdFn(ctx)
-		if pwdErr != nil {
-			return fmt.Errorf("2FA password: %w", pwdErr)
-		}
-		if _, err := ac.Password(ctx, pwd); err != nil {
-			return fmt.Errorf("2FA login: %w", err)
-		}
 	}
 	return nil
 }
@@ -88,14 +95,6 @@ func LoginQR(ctx context.Context, client *telegram.Client, dispatcher tg.UpdateD
 		return fmt.Errorf("QR login: %w", err)
 	}
 	return nil
-}
-
-// needsPassword checks if the error signals a 2FA password requirement.
-func needsPassword(err error) bool {
-	if err == nil {
-		return false
-	}
-	return strings.Contains(err.Error(), "SESSION_PASSWORD_NEEDED")
 }
 
 // Logout performs auth.LogOut and returns any error.

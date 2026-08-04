@@ -42,9 +42,32 @@ func (s *Store) Get(key string) (json.RawMessage, bool) {
 }
 
 // Set stores a value in the cache.
+//
+// The write is atomic: the payload is written to a temp file in the same
+// directory and renamed over the final path, so a crash mid-write can never
+// leave a truncated JSON blob that a later Get() would serve (Get only checks
+// the file's mtime for freshness).
 func (s *Store) Set(key string, value json.RawMessage) {
-	_ = os.MkdirAll(s.Dir, 0o700)
-	_ = os.WriteFile(s.path(key), []byte(value), 0o600)
+	path := s.path(key)
+	if err := os.MkdirAll(s.Dir, 0o700); err != nil {
+		return
+	}
+	tmp, err := os.CreateTemp(s.Dir, "cache-*.tmp")
+	if err != nil {
+		return
+	}
+	tmpName := tmp.Name()
+	// no-op after a successful rename; best-effort cleanup on failure paths.
+	defer os.Remove(tmpName)
+	if _, err := tmp.Write(value); err != nil {
+		_ = tmp.Close()
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		return
+	}
+	_ = os.Chmod(tmpName, 0o600)
+	_ = os.Rename(tmpName, path)
 }
 
 // Clear removes all cached entries.

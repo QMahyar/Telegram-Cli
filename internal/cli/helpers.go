@@ -230,13 +230,25 @@ func emitError(w io.Writer, err error, flags *rootFlags) {
 		body.Hint = ce.hint
 		body.Suggestions = ce.suggestions
 		body.Details = ce.details
+		// Keep the structured envelope message free of the inlined hint that
+		// Execute() rewraps into the error text; the hint lives in its own
+		// field so agents parse one canonical shape.
+		if ce.hint != "" && ce.err != nil {
+			body.Message = ce.err.Error()
+		}
 	}
 	if flags != nil && (flags.agent || argsAgentRequested(os.Args[1:])) {
 		_ = json.NewEncoder(w).Encode(errorEnvelope{Ok: false, Error: body})
 		return
 	}
 	fmt.Fprintf(w, "Error: %v\n", err)
-	if body.Hint != "" {
+	// The hint may already be inlined into the error text by Execute()'s
+	// rewrap (unknown-flag suggestions print it via %v above); only print a
+	// separate line when it is not already present, so a single coherent
+	// "Error:/hint:" emission is produced for humans. body.Message is
+	// intentionally NOT used here because it is cleaned of the inlined hint
+	// for the JSON envelope.
+	if body.Hint != "" && !strings.Contains(err.Error(), body.Hint) {
 		fmt.Fprintf(w, "hint: %s\n", body.Hint)
 	}
 }

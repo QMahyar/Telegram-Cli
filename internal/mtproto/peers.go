@@ -167,8 +167,11 @@ func classifyID(id int64) (peerType string, peerID int64) {
 	case id > 0:
 		return "user", id
 	case id < -1000000000000:
-		// -100xxx — channel. Strip the -100 prefix.
-		return "channel", id + (-1000000000000)
+		// -100xxx — channel. The raw MTProto peer id is -(1000000000000 + N)
+		// where N is the plain channel id, so stripping the -100 prefix yields
+		// the positive id: -id - 1000000000000. (id + (-1000000000000) would
+		// push the id further negative and is non-idempotent.)
+		return "channel", -id - 1000000000000
 	case id < 0:
 		// Legacy chat (negative, not -100xxx)
 		return "chat", -id

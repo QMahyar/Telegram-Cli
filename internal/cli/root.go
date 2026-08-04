@@ -157,7 +157,16 @@ func Execute() (retErr error) {
 		err = usageErr(err)
 	}
 	if hintMsg != "" {
+		// Attach the did-you-mean as a structured hint so the --agent JSON
+		// envelope carries a parseable `hint` field, AND keep it in the
+		// returned error's text. The journal contract (and
+		// TestIsCobraUsageError_SurvivesHintRewrap) requires the hint to
+		// survive into Error(); the e9d61de refactor dropped it, which broke
+		// TestJournal_UnknownFlagJournalsFailedFlagAndSuggestion. The rewrap
+		// restores the original "%w\nhint: ..." shape while withHint keeps
+		// the structured hint available to emitError.
 		err = withHint(err, hintMsg)
+		err = fmt.Errorf("%w\nhint: %s", err, hintMsg)
 	}
 	if err != nil {
 		// SilenceErrors is set on the root, so cobra does not print the

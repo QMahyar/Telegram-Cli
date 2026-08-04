@@ -4,16 +4,70 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
+	"regexp"
 	"strings"
 
 	"telegram-cli/internal/config"
+	"telegram-cli/internal/store"
 
 	"github.com/spf13/cobra"
 )
 
+// sqlWriteRE matches SQL data-modification keywords as whole words. Applied to
+// a WITH-prefixed query (after string literals are stripped) so a data-
+// modifying CTE like `WITH x AS (...) INSERT INTO ...` — which the prefix
+// allow-list would otherwise admit — is rejected with a clear message instead
+// of reaching the database. Read-only CTEs that merely reference a column
+// named e.g. "updated" or a LIKE '%delete%' literal never match because
+// literal strings are removed first and the match is word-boundary-anchored.
+var sqlWriteRE = regexp.MustCompile(`(?i)\b(CREATE|DROP|INSERT|UPDATE|DELETE|REPLACE|ALTER|ATTACH|DETACH|REINDEX|VACUUM|TRUNCATE)\b`)
+
+// stripSQLStrings removes single-quoted string literals from a SQL query so
+// keyword detection never false-positives on user data inside literals.
+// SQLite string literals may embed a quote as two adjacent single quotes;
+// that shape is consumed by the same scan. Not a SQL lexer: it exists only
+// to defang the word-boundary check below, and the real write rejection is
+// the driver-level mode=ro guard in OpenReadOnlyContext.
+func stripSQLStrings(q string) string {
+	var sb strings.Builder
+	inStr := false
+	for i := 0; i < len(q); i++ {
+		c := q[i]
+		if c == '\'' {
+			if !inStr {
+				inStr = true
+			} else if i+1 < len(q) && q[i+1] == '\'' {
+				// escaped quote inside the literal; skip both.
+				sb.WriteByte(' ')
+				i++
+				continue
+			} else {
+				inStr = false
+			}
+			sb.WriteByte(' ')
+			continue
+		}
+		if inStr {
+			sb.WriteByte(' ')
+			continue
+		}
+		sb.WriteByte(c)
+	}
+	return sb.String()
+}
+
 // sqlGuard rejects anything that is not a read-only query against the mirror
 // database. Only SELECT, PRAGMA, EXPLAIN, and WITH (CTE) statements are
 // allowed; multi-statement input is rejected outright.
+//
+// The prefix allow-list alone is NOT a write barrier: SQLite supports data-
+// modifying CTEs (`WITH x AS (...) INSERT/UPDATE/DELETE/REPLACE ...`), so a
+// WITH-prefixed query is additionally scanned for write keywords. The final
+// guarantee is the connection itself: newSQLCmd opens the store with
+// OpenReadOnlyContext (mode=ro), which rejects any write — direct, CTE-
+// wrapped, or PRAGMA — at the driver level. This guard exists so users get a
+// clear "read-only" message instead of a raw SQLITE_READONLY error.
 func sqlGuard(query string) error {
 	trimmed := strings.TrimSpace(query)
 	if trimmed == "" {
@@ -27,6 +81,14 @@ func sqlGuard(query string) error {
 		strings.HasPrefix(lower, "with"):
 	default:
 		return usageErr(fmt.Errorf("read-only mirror queries only: SELECT, PRAGMA, EXPLAIN, WITH"))
+	}
+	// EXPLAIN never executes its statement (it only reports the plan), so the
+	// write-keyword scan is skipped for it. WITH, on the other hand, can wrap
+	// a data-modifying statement, so it is scanned after literal stripping.
+	if strings.HasPrefix(lower, "with") {
+		if sqlWriteRE.MatchString(stripSQLStrings(trimmed)) {
+			return usageErr(fmt.Errorf("read-only mirror queries only: data-modifying statements are not allowed inside WITH"))
+		}
 	}
 	// sqlite3 does not allow multiple statements in a single Prepare anyway,
 	// but reject semicolons that split into a second statement explicitly.
@@ -56,9 +118,17 @@ func newSQLCmd(flags *rootFlags) *cobra.Command {
 				return err
 			}
 			ctx := cmd.Context()
-			s, err := openStore(ctx, home)
+			dbPath := config.DefaultDBPath(home)
+			// Read-only open: the sql command must never mutate the mirror
+			// database. OpenReadOnlyContext (mode=ro) rejects direct AND CTE-
+			// wrapped writes at the driver level, which the statement-level
+			// sqlGuard prefix check alone cannot guarantee (see sqlGuard).
+			if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+				return notFoundErr(fmt.Errorf("mirror database not found at %s — run a sync or any telegram command first to create it", dbPath))
+			}
+			s, err := store.OpenReadOnlyContext(ctx, dbPath)
 			if err != nil {
-				return err
+				return fmt.Errorf("open mirror database (read-only): %w", err)
 			}
 			defer s.DB().Close()
 

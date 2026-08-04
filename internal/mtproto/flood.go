@@ -32,8 +32,12 @@ func ClassifyError(err error) (FloodKind, time.Duration, string) {
 		return FloodBanned, 0, "global"
 	}
 	// FLOOD_WAIT_N
-	if e, ok := err.(*tgerr.Error); ok && e.IsType("FLOOD_WAIT") {
-		n := e.Argument
+	// Use tgerr.As (errors.As) instead of a direct type assertion so the error
+	// still classifies when the caller wrapped it with fmt.Errorf("%w", ...)
+	// — the direct `err.(*tgerr.Error)` assert below silently returned
+	// FloodNone for wrapped errors, disabling retry/backoff.
+	if rpcErr, ok := tgerr.As(err); ok && rpcErr.IsType("FLOOD_WAIT") {
+		n := rpcErr.Argument
 		if n <= 0 {
 			n = 30
 		}
