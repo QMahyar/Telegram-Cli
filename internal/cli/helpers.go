@@ -2384,7 +2384,7 @@ func defaultDBPath(name string) string {
 	dir, err := cliutil.DataDir()
 	if err != nil {
 		if home, homeErr := os.UserHomeDir(); homeErr == nil {
-			return filepath.Join(home, ".local", "share", name, "data.db")
+			return filepath.Join(home, ".telegram-cli", name, "data.db")
 		}
 		return "data.db"
 	}

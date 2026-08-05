@@ -289,6 +289,13 @@ See README.md or the bundled SKILL.md for recipes.`,
 		if _, err := cliutil.SetHomeOverride(flags.homePath); err != nil {
 			return err
 		}
+		// One-time move of XDG-scattered installs into ~/.telegram-cli.
+		// No-op unless everything resolves via the platform default, and
+		// never when --home or an env override is set (MigrateLegacyLayout
+		// checks the resolved rungs).
+		if err := cliutil.MigrateLegacyLayout(); err != nil {
+			return err
+		}
 		if flags.deliverSpec != "" {
 			sink, err := ParseDeliverSink(flags.deliverSpec)
 			if err != nil {

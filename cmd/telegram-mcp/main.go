@@ -10,6 +10,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/server"
 	"telegram-cli/internal/cli"
+	"telegram-cli/internal/cliutil"
 	mcptools "telegram-cli/internal/mcp"
 )
 
@@ -27,6 +28,12 @@ const (
 var version = "0.0.0-dev"
 
 func main() {
+	// Move a pre-0.1.5 XDG-scattered install into ~/.telegram-cli before
+	// any path resolution; no-op unless platform defaults are in play.
+	if err := cliutil.MigrateLegacyLayout(); err != nil {
+		fmt.Fprintf(os.Stderr, "telegram-cli data migration failed: %v\n", err)
+		os.Exit(1)
+	}
 	// Pin the learn-event surface for this process and every walker
 	// shell-out child, so usage events record surface=mcp.
 	_ = os.Setenv("TELEGRAM_LEARN_SURFACE", "mcp")

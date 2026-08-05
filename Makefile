@@ -1,6 +1,10 @@
 .PHONY: build test lint install clean dist npm-pack npm-publish
 
 BIN_EXT := $(if $(filter windows,$(shell go env GOOS)),.exe,)
+GOBIN := $(shell go env GOBIN)
+ifeq ($(GOBIN),)
+GOBIN := $(shell go env GOPATH)/bin
+endif
 
 build:
 	go build -o bin/telegram-cli$(BIN_EXT) ./cmd/telegram-cli
@@ -13,6 +17,11 @@ lint:
 
 install:
 	go install ./cmd/telegram-cli
+	# Ship the `tele` alias with source installs too: the same binary is
+	# installed under both names in GOBIN (copy, not symlink, so it works
+	# without admin/developer-mode on Windows). The npm distribution does
+	# the same via two bin entries pointing at the one shim.
+	cp $(GOBIN)/telegram-cli$(BIN_EXT) $(GOBIN)/tele$(BIN_EXT)
 
 clean:
 	rm -rf bin/ dist/ vendor/

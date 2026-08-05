@@ -5,7 +5,8 @@
   "license": "Apache-2.0",
   "type": "commonjs",
   "bin": {
-    "telegram-cli": "bin/telegram-cli.js"
+    "telegram-cli": "bin/telegram-cli.js",
+    "tele": "bin/telegram-cli.js"
   },
   "scripts": {
     "postinstall": "node scripts/install.js"

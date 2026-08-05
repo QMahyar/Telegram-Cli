@@ -4,6 +4,7 @@ package cliutil
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -23,17 +24,17 @@ func resetPathEnv(t *testing.T) string {
 	return testenv.Isolate(t, ConfigDir, DataDir, StateDir, CacheDir)
 }
 
-func TestKindDirDefaultsMatchLegacyLayout(t *testing.T) {
+func TestKindDirDefaultsLiveUnderDotTelegramCLI(t *testing.T) {
 	home := resetPathEnv(t)
 
 	tests := []struct {
 		kind PathKind
 		want string
 	}{
-		{PathKindConfig, filepath.Join(home, ".config", appName)},
-		{PathKindData, filepath.Join(home, ".local", "share", appName)},
-		{PathKindState, filepath.Join(home, ".local", "state", appName)},
-		{PathKindCache, filepath.Join(home, ".cache", appName)},
+		{PathKindConfig, filepath.Join(home, ".telegram-cli", "config")},
+		{PathKindData, filepath.Join(home, ".telegram-cli", "data")},
+		{PathKindState, filepath.Join(home, ".telegram-cli", "state")},
+		{PathKindCache, filepath.Join(home, ".telegram-cli", "cache")},
 	}
 	for _, tt := range tests {
 		got, err := KindDir(tt.kind)
@@ -128,7 +129,7 @@ func TestKindDirDataPrecedencePairs(t *testing.T) {
 	t.Setenv(envPrefix+"_HOME", "")
 	assertDataDir(t, filepath.Join(xdg, appName))
 	t.Setenv("XDG_DATA_HOME", "")
-	assertDataDir(t, filepath.Join(home, ".local", "share", appName))
+	assertDataDir(t, filepath.Join(home, ".telegram-cli", "data"))
 }
 
 func TestKindDirRelativeOverridesWarnAndFallThrough(t *testing.T) {
@@ -141,7 +142,7 @@ func TestKindDirRelativeOverridesWarnAndFallThrough(t *testing.T) {
 		if err != nil {
 			t.Fatalf("DataDir() error = %v", err)
 		}
-		if want := filepath.Join(home, ".local", "share", appName); got != want {
+		if want := filepath.Join(home, ".telegram-cli", "data"); got != want {
 			t.Fatalf("DataDir() = %q, want %q", got, want)
 		}
 	})
@@ -200,7 +201,7 @@ func TestHomeOverrideWinsForDefaultBaseAndTildeExpansion(t *testing.T) {
 	}
 	if got, err := defaultBase(PathKindData); err != nil {
 		t.Fatalf("defaultBase() error = %v", err)
-	} else if want := filepath.Join(override, ".local", "share"); got != want {
+	} else if want := filepath.Join(override, ".telegram-cli", "data"); got != want {
 		t.Fatalf("defaultBase() = %q, want %q", got, want)
 	}
 }
@@ -213,6 +214,106 @@ func assertDataDir(t *testing.T, want string) {
 	}
 	if got != want {
 		t.Fatalf("DataDir() = %q, want %q", got, want)
+	}
+}
+
+func TestMigrateLegacyLayoutMovesXDGScatterIntoSingleRoot(t *testing.T) {
+	home := resetPathEnv(t)
+
+	// Seed legacy XDG-scattered dirs with recognizable files.
+	legacyConfig := filepath.Join(home, ".config", appName)
+	legacyData := filepath.Join(home, ".local", "share", appName)
+	legacyState := filepath.Join(home, ".local", "state", appName)
+	legacyCache := filepath.Join(home, ".cache", appName)
+	for dir, file := range map[string]string{
+		legacyConfig: "config.toml",
+		legacyData:   "telegram.db",
+		legacyState:  "state.bin",
+		legacyCache:  "cache.bin",
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, file), []byte(file), 0o600); err != nil {
+			t.Fatalf("write %s: %v", file, err)
+		}
+	}
+
+	if err := MigrateLegacyLayout(); err != nil {
+		t.Fatalf("MigrateLegacyLayout() error = %v", err)
+	}
+
+	want := map[PathKind]string{
+		PathKindConfig: filepath.Join(home, ".telegram-cli", "config"),
+		PathKindData:   filepath.Join(home, ".telegram-cli", "data"),
+		PathKindState:  filepath.Join(home, ".telegram-cli", "state"),
+		PathKindCache:  filepath.Join(home, ".telegram-cli", "cache"),
+	}
+	for kind, dir := range want {
+		got, err := KindDir(kind)
+		if err != nil {
+			t.Fatalf("KindDir(%s) error = %v", kindName(kind), err)
+		}
+		if got != dir {
+			t.Fatalf("KindDir(%s) = %q, want %q", kindName(kind), got, dir)
+		}
+		// Each seeded marker file must have moved along with its dir.
+		var marker string
+		switch kind {
+		case PathKindConfig:
+			marker = "config.toml"
+		case PathKindData:
+			marker = "telegram.db"
+		case PathKindState:
+			marker = "state.bin"
+		case PathKindCache:
+			marker = "cache.bin"
+		}
+		if _, err := os.Stat(filepath.Join(dir, marker)); err != nil {
+			t.Fatalf("marker %s not migrated into %s: %v", marker, dir, err)
+		}
+		if _, err := os.Stat(legacyBaseFor(home, kind)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("legacy dir for %s still present after migration", kindName(kind))
+		}
+	}
+
+	// Idempotent: a second run must be a no-op (nothing to move).
+	if err := MigrateLegacyLayout(); err != nil {
+		t.Fatalf("second MigrateLegacyLayout() error = %v", err)
+	}
+}
+
+func TestMigrateLegacyLayoutSkipsWhenOverrideInPlay(t *testing.T) {
+	resetPathEnv(t)
+	legacy := filepath.Join(t.TempDir(), "legacy")
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(legacy, "keep.txt"), []byte("keep"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	t.Setenv(envPrefix+"_DATA_DIR", filepath.Join(t.TempDir(), "explicit"))
+	if err := MigrateLegacyLayout(); err != nil {
+		t.Fatalf("MigrateLegacyLayout() error = %v", err)
+	}
+	if _, err := os.Stat(legacy); err != nil {
+		t.Fatalf("legacy dir touched despite env override: %v", err)
+	}
+}
+
+func legacyBaseFor(home string, kind PathKind) string {
+	switch kind {
+	case PathKindConfig:
+		return filepath.Join(home, ".config", appName)
+	case PathKindData:
+		return filepath.Join(home, ".local", "share", appName)
+	case PathKindState:
+		return filepath.Join(home, ".local", "state", appName)
+	case PathKindCache:
+		return filepath.Join(home, ".cache", appName)
+	default:
+		return ""
 	}
 }
 

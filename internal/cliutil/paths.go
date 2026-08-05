@@ -184,7 +184,7 @@ func ResolveKindDir(kind PathKind) (PathResolution, error) {
 	if err != nil {
 		return PathResolution{}, err
 	}
-	return pathResolution(kind, filepath.Join(base, appName), "platform-default", "platform-default", ignored), nil
+	return pathResolution(kind, base, "platform-default", "platform-default", ignored), nil
 }
 
 func AllPathResolutions() ([]PathResolution, error) {
@@ -316,21 +316,80 @@ func warnSkippedPathOverride(name, raw string) {
 	fmt.Fprintf(os.Stderr, "warning: ignoring %s=%q: path must be absolute\n", name, raw)
 }
 
+// defaultBase returns the platform-default directory for a path kind: every
+// kind lives under a single per-user ~/.telegram-cli root, so config,
+// sessions, databases, and cache are all in one folder the user can see and
+// back up (see MigrateLegacyLayout for the one-time move from the old
+// XDG-scattered layout).
 func defaultBase(kind PathKind) (string, error) {
+	home, err := resolvedHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve user home dir: %w", err)
+	}
+	return filepath.Join(home, ".telegram-cli", kindName(kind)), nil
+}
+
+// LegacyBase returns the pre-0.1.5 platform-default location for a kind
+// (XDG dirs: ~/.config/telegram-cli, ~/.local/share/telegram-cli,
+// ~/.local/state/telegram-cli, ~/.cache/telegram-cli).
+func LegacyBase(kind PathKind) (string, error) {
 	home, err := resolvedHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("resolve user home dir: %w", err)
 	}
 	switch kind {
 	case PathKindConfig:
-		return filepath.Join(home, ".config"), nil
+		return filepath.Join(home, ".config", appName), nil
 	case PathKindData:
-		return filepath.Join(home, ".local", "share"), nil
+		return filepath.Join(home, ".local", "share", appName), nil
 	case PathKindState:
-		return filepath.Join(home, ".local", "state"), nil
+		return filepath.Join(home, ".local", "state", appName), nil
 	case PathKindCache:
-		return filepath.Join(home, ".cache"), nil
+		return filepath.Join(home, ".cache", appName), nil
 	default:
 		return "", fmt.Errorf("unknown path kind %d", kind)
 	}
+}
+
+// MigrateLegacyLayout moves an existing XDG-scattered install into the
+// unified ~/.telegram-cli layout. It is a no-op when the current resolution
+// is not the platform default (any --home or env override skips it entirely)
+// or when the new directory already exists. A move is a single rename, so
+// sessions, config, and databases survive intact; re-running is safe because
+// legacy dirs are only present once.
+func MigrateLegacyLayout() error {
+	kinds := []PathKind{PathKindConfig, PathKindData, PathKindState, PathKindCache}
+	resolutions := make([]PathResolution, 0, len(kinds))
+	for _, kind := range kinds {
+		res, err := ResolveKindDir(kind)
+		if err != nil {
+			return err
+		}
+		if res.Rung != "platform-default" {
+			return nil // explicit override in play — never relocate user-configured paths
+		}
+		resolutions = append(resolutions, res)
+	}
+	for _, res := range resolutions {
+		legacy, err := LegacyBase(res.Kind)
+		if err != nil {
+			return err
+		}
+		if legacy == res.Dir {
+			continue
+		}
+		if _, err := os.Stat(legacy); errors.Is(err, os.ErrNotExist) {
+			continue // nothing to migrate
+		}
+		if _, err := os.Stat(res.Dir); err == nil {
+			continue // already migrated (or a fresh install) — keep the legacy dir untouched
+		}
+		if err := os.MkdirAll(filepath.Dir(res.Dir), 0o700); err != nil {
+			return fmt.Errorf("creating %s: %w", filepath.Dir(res.Dir), err)
+		}
+		if err := os.Rename(legacy, res.Dir); err != nil {
+			return fmt.Errorf("migrating %s from %s to %s: %w", res.KindName, legacy, res.Dir, err)
+		}
+	}
+	return nil
 }

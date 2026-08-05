@@ -55,7 +55,7 @@ func TestMCPPathResolutionMatchesCLIResolverWithPlatformDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newMCPConfig() error = %v", err)
 	}
-	if want := filepath.Join(home, ".config", "telegram-cli", "config.toml"); cfg.Path != want {
+	if want := filepath.Join(home, ".telegram-cli", "config", "config.toml"); cfg.Path != want {
 		t.Fatalf("MCP config path = %q, want %q", cfg.Path, want)
 	}
 
@@ -63,7 +63,7 @@ func TestMCPPathResolutionMatchesCLIResolverWithPlatformDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mcpDBPath() error = %v", err)
 	}
-	if want := filepath.Join(home, ".local", "share", "telegram-cli", "data.db"); gotDB != want {
+	if want := filepath.Join(home, ".telegram-cli", "data", "data.db"); gotDB != want {
 		t.Fatalf("MCP db path = %q, want %q", gotDB, want)
 	}
 }

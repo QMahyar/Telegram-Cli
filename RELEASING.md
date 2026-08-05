@@ -54,9 +54,9 @@ Watch it: `gh run watch` (first run) or `gh run list --workflow=release.yml`.
 # GitHub release exists with 6 binaries + SHA256SUMS
 gh release view v0.1.0
 
-# npm package exists and installs cleanly on this platform
-npm view @qmahyar/telegram-cli version
-cd "$(mktemp -d)" && npm i -g @qmahyar/telegram-cli && telegram-cli version
+# npm package exists and installs cleanly on this platform; both the
+# telegram-cli and tele bin names resolve (aliases ship with the package)
+cd "$(mktemp -d)" && npm i -g @qmahyar/telegram-cli && telegram-cli version && tele version
 
 # the baked version matches the tag
 curl -sL https://github.com/QMahyar/Telegram-Cli/releases/download/v0.1.0/telegram-cli-linux-amd64 -o /tmp/tc && chmod +x /tmp/tc && /tmp/tc version

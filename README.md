@@ -28,6 +28,11 @@ go install ./cmd/telegram-cli
 go install ./cmd/telegram-mcp
 ```
 
+`make install` also ships the **`tele`** alias next to `telegram-cli` (npm
+installs get it automatically — both names run the same binary). `tele` is
+a core-project alias, not a per-machine shortcut: `tele` and
+`telegram-cli` are interchangeable everywhere.
+
 ### Pre-built binary
 
 Install from npm (downloads the platform binary from GitHub Releases on install):
@@ -35,6 +40,8 @@ Install from npm (downloads the platform binary from GitHub Releases on install)
 ```bash
 npm install -g @qmahyar/telegram-cli
 ```
+
+This puts both `telegram-cli` and `tele` on your PATH.
 
 or download a pre-built binary for your platform from [GitHub Releases](https://github.com/QMahyar/Telegram-Cli/releases). On macOS, clear the Gatekeeper quarantine: `xattr -d com.apple.quarantine <binary>`. On Unix, mark it executable: `chmod +x <binary>`.
 
@@ -289,7 +296,17 @@ Precedence matters in fleets: an ambient per-kind variable such as `TELEGRAM_DAT
 
 Relocation is one-way. Unsetting `TELEGRAM_HOME` does not move files back to platform defaults, and `doctor` cannot find files left under a former root. Move the files manually before unsetting relocation variables.
 
-Existing installs keep working because the platform-default rung matches the legacy layout. Run `telegram-cli doctor --fail-on warn` to check path warnings in automation.
+By default everything lives in one per-user folder, `~/.telegram-cli` (config, sessions, databases, cache — all of it):
+
+```
+~/.telegram-cli/
+├── config/config.toml   # settings (auth header redacted in reads)
+├── data/                # sessions/, telegram.db, data.db, jobs, audit
+├── state/
+└── cache/
+```
+
+Pre-0.1.5 installs used XDG-scattered dirs (`~/.config/telegram-cli`, `~/.local/share/telegram-cli`, ...); the first run of a new binary moves them into `~/.telegram-cli` automatically (one-time, only when no `--home`/env override is set). Run `telegram-cli doctor --fail-on warn` to check path warnings in automation.
 
 ## Commands
 
@@ -374,7 +391,7 @@ Verifies configuration and connectivity to the API.
 
 ## Configuration
 
-Run `telegram-cli doctor` to see the resolved config, data, state, and cache directories. The platform-default config path is `~/.config/telegram-cli/config.toml`; `--home`, `TELEGRAM_HOME`, and per-kind env vars can relocate it.
+Run `telegram-cli doctor` to see the resolved config, data, state, and cache directories. The platform-default root is `~/.telegram-cli` (config at `~/.telegram-cli/config/config.toml`); `--home`, `TELEGRAM_HOME`, and per-kind env vars can relocate it.
 
 Static request headers can be configured under `headers`; per-command header overrides take precedence.
 
