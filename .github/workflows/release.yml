@@ -2,17 +2,21 @@ name: release
 
 # Fired by `git push origin v<semver>` (see RELEASING.md — the tag IS the
 # version; there is no separate version bump). Builds the binary matrix for
-# every platform and attaches it to a GitHub Release. Publishing the npm
-# package is a separate workflow (npm-publish.yml) that runs on the
-# "release: published" event, so the two pipelines stay independently
-# re-runnable and neither blocks the other.
+# every platform and attaches it to a GitHub Release. The final step
+# explicitly dispatches npm-publish.yml so the npm package ships at the same
+# version (workflow_dispatch is more reliable than the "release: published"
+# event for bot-created releases).
 on:
   push:
     tags:
       - "v*"
 
+# actions: write is required so the final step can dispatch npm-publish.yml
+# (workflow_dispatch via the API needs it; contents: write is for the release
+# assets). The npm publish chain is the separate npm-publish.yml workflow.
 permissions:
   contents: write
+  actions: write
 
 jobs:
   release:
