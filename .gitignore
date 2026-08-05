@@ -11,6 +11,8 @@ telegram-cli.exe
 bin/
 dist/
 vendor/
+node_modules/
+package-lock.json
 *.tgz
 
 export/
