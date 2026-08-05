@@ -30,9 +30,12 @@ any release.
 ```bash
 # 0. Prereqs (once):
 #    - GitHub: gh auth login (done; token needs contents:write on this repo)
-#    - npm:    add the NPM_TOKEN repo secret (npm > Access Tokens > Generate
-#              New Token > Automation, scope @qmahyar/telegram-cli). Until it
-#              exists, npm-publish.yml reports a skip and the manual fallback
+#    - npm:    add the NPM_TOKEN repo secret. The token MUST be a classic
+#              Automation token: npm > Access Tokens > Generate New Token
+#              > type **Automation** (NOT granular — granular tokens with
+#              read/write scope still demand a 2FA one-time password on
+#              publish and fail in CI with EOTP). Until the secret exists,
+#              npm-publish.yml reports a skip and the manual fallback
 #              below applies.
 
 # 1. Make sure main is green (CI runs build/vet/test/lint on every push).
