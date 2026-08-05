@@ -29,9 +29,11 @@ jobs:
         run: go test -count=1 ./...
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: v1.64
+        # Prebuilt golangci-lint release binaries are built with an older Go
+        # than go.mod targets (go 1.26.5) and refuse to load the config, so
+        # build from source with the runner's Go — exactly what `go run
+        # ...@latest` does locally. setup-go above caches the module download.
+        run: go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 run ./...
 
   dist-check:
     runs-on: ubuntu-latest
