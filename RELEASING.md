@@ -5,16 +5,19 @@ source tree: `telegram-cli version` is stamped at build time from the tag via
 `-ldflags "-X telegram-cli/internal/cli.version=<tag>"`, and the npm package
 version is derived from the same tag in the publish workflow.
 
-Pushing a `v*` tag triggers two permanent GitHub Actions pipelines:
+Pushing a `v*` tag triggers two permanent GitHub Actions pipelines that
+chain deterministically:
 
 1. **`.github/workflows/release.yml`** (on `push: tags v*`)
-   Builds the binary matrix via `scripts/dist.sh` and attaches the assets to
-   a GitHub Release named after the tag, with auto-generated release notes.
-2. **`.github/workflows/npm-publish.yml`** (on `release: published`, also
-   manually dispatchable)
-   Publishes **@qmahyar/telegram-cli** to the npm registry at the same
-   version, so `npm i -g @qmahyar/telegram-cli` resolves the binary for the
-   user's platform from the matching GitHub Release.
+   Builds the binary matrix via `scripts/dist.sh`, attaches the assets to a
+   GitHub Release named after the tag (auto-generated notes), then
+   explicitly dispatches the npm pipeline as its final step — no reliance
+   on the flaky `release: published` event for bot-created releases.
+2. **`.github/workflows/npm-publish.yml`** (workflow_dispatch only)
+   Publishes **@qmahyar/telegram-cli** at the same version, so
+   `npm i -g @qmahyar/telegram-cli` resolves the binary for the user's
+   platform from the matching GitHub Release. Without the `NPM_TOKEN`
+   secret it reports a skip with the manual fallback instead of failing.
 
 Asset naming is the contract between the two pipelines and the npm
 postinstall (`scripts/install.js`): `telegram-cli-<os>-<arch>[.exe]` for

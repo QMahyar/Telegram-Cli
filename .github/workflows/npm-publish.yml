@@ -1,16 +1,13 @@
 name: npm-publish
 
-# Publishes the @qmahyar/telegram-cli npm package. Runs automatically when a
-# GitHub Release is published (the release workflow above), and can be
-# triggered manually for a specific tag with:
+# Publishes the @qmahyar/telegram-cli npm package. Dispatched by the
+# release workflow's final step (and manually with):
 #   gh workflow run npm-publish.yml -f tag=v0.1.0
 #
 # Requires the NPM_TOKEN repository secret (npm > Access Tokens > Generate
 # New Token > Automation; scope: @qmahyar/telegram-cli). Until that secret
 # exists this workflow reports the skip instead of failing the release.
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       tag:

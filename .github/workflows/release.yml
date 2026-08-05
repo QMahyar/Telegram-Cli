@@ -38,8 +38,17 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
 
+      # Explicitly chain the npm publish instead of relying on the
+      # "release: published" event, which does not fire reliably for
+      # bot-created releases. npm-publish.yml is workflow_dispatch-only;
+      # without NPM_TOKEN it reports a skip with the manual fallback.
+      - name: Dispatch npm publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run npm-publish.yml -f tag="$GITHUB_REF_NAME"
+
       - name: Report
         run: |
           echo "Release $GITHUB_REF_NAME assets:"
           ls -1 dist
-          echo "npm publish runs automatically via npm-publish.yml (release: published)."
+          echo "npm publish dispatched to npm-publish.yml (workflow_dispatch)."
