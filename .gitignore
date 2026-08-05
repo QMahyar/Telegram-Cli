@@ -8,11 +8,16 @@ telegram-cli.exe
 !.env.example
 
 # build + npm artifacts
-bin/
 dist/
 vendor/
 node_modules/
 package-lock.json
 *.tgz
+
+# compiled binaries (the JS shim bin/telegram-cli.js IS tracked source)
+bin/telegram-cli
+bin/telegram-cli.exe
+bin/telegram-mcp
+bin/telegram-mcp.exe
 
 export/
