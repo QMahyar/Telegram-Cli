@@ -86,7 +86,9 @@ func newForwardCmd(flags *rootFlags) *cobra.Command {
 			var msgIDs []int64
 			for _, a := range args[2:] {
 				var id int64
-				fmt.Sscanf(a, "%d", &id)
+				if _, err := fmt.Sscanf(a, "%d", &id); err != nil || id <= 0 {
+					return usageErr(fmt.Errorf("invalid message id %q: must be a positive integer", a))
+				}
 				msgIDs = append(msgIDs, id)
 			}
 			home, err := config.HomeDir(flags.homePath)
@@ -146,7 +148,9 @@ func newDeleteCmd(flags *rootFlags) *cobra.Command {
 			var msgIDs []int64
 			for _, a := range args[1:] {
 				var id int64
-				fmt.Sscanf(a, "%d", &id)
+				if _, err := fmt.Sscanf(a, "%d", &id); err != nil || id <= 0 {
+					return usageErr(fmt.Errorf("invalid message id %q: must be a positive integer", a))
+				}
 				msgIDs = append(msgIDs, id)
 			}
 			home, err := config.HomeDir(flags.homePath)
@@ -252,7 +256,9 @@ func newReactCmd(flags *rootFlags) *cobra.Command {
 			}
 			ref, emoji := args[0], args[2]
 			var msgID int64
-			fmt.Sscanf(args[1], "%d", &msgID)
+			if _, err := fmt.Sscanf(args[1], "%d", &msgID); err != nil || msgID <= 0 {
+				return usageErr(fmt.Errorf("invalid message id %q: must be a positive integer", args[1]))
+			}
 			home, err := config.HomeDir(flags.homePath)
 			if err != nil {
 				return err
@@ -300,7 +306,9 @@ func newEditCmd(flags *rootFlags) *cobra.Command {
 			}
 			ref, text := args[0], args[2]
 			var msgID int64
-			fmt.Sscanf(args[1], "%d", &msgID)
+			if _, err := fmt.Sscanf(args[1], "%d", &msgID); err != nil || msgID <= 0 {
+				return usageErr(fmt.Errorf("invalid message id %q: must be a positive integer", args[1]))
+			}
 			home, err := config.HomeDir(flags.homePath)
 			if err != nil {
 				return err
@@ -348,7 +356,9 @@ func newMediaCmd(flags *rootFlags) *cobra.Command {
 			}
 			ref := args[0]
 			var msgID int64
-			fmt.Sscanf(args[1], "%d", &msgID)
+			if _, err := fmt.Sscanf(args[1], "%d", &msgID); err != nil || msgID <= 0 {
+				return usageErr(fmt.Errorf("invalid message id %q: must be a positive integer", args[1]))
+			}
 			outDir := "."
 			if len(args) > 2 {
 				outDir = args[2]

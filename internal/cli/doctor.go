@@ -18,8 +18,11 @@ import (
 // represented by the generated Config fields. Assign this from a same-package
 // author file after generation. This is a presence signal only; custom flows
 // own their transport and credential-probe validation.
+//
+//nolint:unused // extension point: assigned by a same-package author file, never in this scaffold
 var doctorAuthConfiguredHook func() (bool, string)
 
+//nolint:unused // extension point: consumed once doctorAuthConfiguredHook is assigned
 func doctorAuthConfiguredState(cfg *config.Config) (bool, string) {
 	if cfg != nil && cfg.CredentialConfigured() {
 		return true, cfg.AuthSource

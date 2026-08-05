@@ -2,6 +2,7 @@ package mtproto
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -175,7 +176,7 @@ func TestRetryWithBackoff(t *testing.T) {
 			calls++
 			return tgerr.New(420, "FLOOD_WAIT_10")
 		})
-		if err != context.DeadlineExceeded {
+		if !errors.Is(err, context.DeadlineExceeded) {
 			t.Errorf("expected context.DeadlineExceeded, got %v", err)
 		}
 	})

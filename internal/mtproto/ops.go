@@ -433,16 +433,6 @@ func usersFromClasses(classes []tg.UserClass) []*tg.User {
 	return users
 }
 
-func chatsFromClasses(classes []tg.ChatClass) []*tg.Chat {
-	var chats []*tg.Chat
-	for _, c := range classes {
-		if ch, ok := c.(*tg.Chat); ok {
-			chats = append(chats, ch)
-		}
-	}
-	return chats
-}
-
 func intSliceFromInt64(in []int64) []int {
 	out := make([]int, len(in))
 	for i, v := range in {

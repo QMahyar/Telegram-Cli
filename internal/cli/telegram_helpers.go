@@ -121,8 +121,10 @@ func resolveAccount(ctx context.Context, s *store.Store, flag string) (string, e
 }
 
 // markAccountUsed updates the last_used_at timestamp for the given alias.
+// Best-effort bookkeeping: failures are intentionally non-fatal (the command
+// itself already succeeded), matching writeAuditRecord's policy.
 func markAccountUsed(ctx context.Context, s *store.Store, alias string) {
-	s.DB().ExecContext(ctx,
+	_, _ = s.DB().ExecContext(ctx,
 		`UPDATE tg_accounts SET last_used_at = datetime('now') WHERE alias = ?`, alias,
 	)
 }
@@ -218,7 +220,7 @@ func outTable(w io.Writer, v any) error {
 		}
 	default:
 		enc := json.NewEncoder(tw)
-		enc.Encode(v)
+		_ = enc.Encode(v) // fallback JSON renderer; tw.Flush() below reports write errors
 	}
 	return tw.Flush()
 }
@@ -234,6 +236,3 @@ type AccountInfo struct {
 
 // stdout returns os.Stdout as an io.Writer.
 func stdout() io.Writer { return os.Stdout }
-
-// stderr returns os.Stderr as an io.Writer.
-func stderr() io.Writer { return os.Stderr }

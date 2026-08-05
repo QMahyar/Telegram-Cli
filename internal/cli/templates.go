@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -59,9 +60,12 @@ func newTemplatesListCmd(flags *rootFlags) *cobra.Command {
 			for rows.Next() {
 				var e templateEntry
 				if err := rows.Scan(&e.Name, &e.Text, &e.UpdatedAt); err != nil {
-					return err
+					return fmt.Errorf("scanning template row: %w", err)
 				}
 				entries = append(entries, e)
+			}
+			if err := rows.Err(); err != nil {
+				return fmt.Errorf("reading template rows: %w", err)
 			}
 			if entries == nil {
 				entries = []templateEntry{}
@@ -137,7 +141,7 @@ func newTemplatesShowCmd(flags *rootFlags) *cobra.Command {
 			err = s.DB().QueryRowContext(ctx,
 				`SELECT name, text, updated_at FROM tg_templates WHERE name = ?`, args[0],
 			).Scan(&e.Name, &e.Text, &e.UpdatedAt)
-			if err == sql.ErrNoRows {
+			if errors.Is(err, sql.ErrNoRows) {
 				return fmt.Errorf("template %q not found", args[0])
 			}
 			if err != nil {

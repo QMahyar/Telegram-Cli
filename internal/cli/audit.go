@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 
 	"telegram-cli/internal/config"
@@ -55,6 +56,9 @@ func newAuditCmd(flags *rootFlags) *cobra.Command {
 					return err
 				}
 				entries = append(entries, e)
+			}
+			if err := rows.Err(); err != nil {
+				return fmt.Errorf("reading audit rows: %w", err)
 			}
 			if entries == nil {
 				entries = []auditEntry{}

@@ -294,6 +294,19 @@ Local SQLite mirror of synced Telegram data
 - **`telegram-cli mirror`** - Show local mirror stats: per-account message counts, chats, db size, sync age
 
 
+### config
+
+Inspect and edit `config.toml` (reads are read-only; `set`/`unset` rewrite the file atomically and never persist `TELEGRAM_BASE_URL`)
+
+- **`telegram-cli config`** - Show resolved config: path, home dir, base_url, headers, and redacted auth state
+- **`telegram-cli config path`** - Print the resolved config file path
+- **`telegram-cli config get <key>`** - Print one value (`base_url`, `auth_header`, `headers.<name>`; empty when unset)
+- **`telegram-cli config set <key> <value>`** - Set a value; `base_url` must be an absolute http(s) URL
+- **`telegram-cli config unset <key>`** - Remove a value
+
+`auth_header` is a credential: `show`/`get` always report it as `<redacted>`, and `set` writes the file with owner-only permissions.
+
+
 ### Self-learning loop
 
 This CLI caches per-question discovery so repeat queries skip the walk and structurally similar queries get answered via entity substitution. The loop also self-captures: every invocation is journaled locally, and failed-flag corrections plus fresh teaches surface as candidates on the next `recall` for confirm/reject judgment. Agents call `recall` before discovery and fire `teach &` after answering. See the `## Automatic learning` section in `SKILL.md` for the full protocol.
@@ -358,6 +371,17 @@ Verifies configuration and connectivity to the API.
 Run `telegram-cli doctor` to see the resolved config, data, state, and cache directories. The platform-default config path is `~/.config/telegram-cli/config.toml`; `--home`, `TELEGRAM_HOME`, and per-kind env vars can relocate it.
 
 Static request headers can be configured under `headers`; per-command header overrides take precedence.
+
+Edit the file by hand or through the CLI:
+
+```bash
+telegram-cli config set base_url https://api.example.com
+telegram-cli config set headers.X-Tenant my-tenant
+telegram-cli config unset headers.X-Tenant
+telegram-cli config get base_url
+```
+
+`config set` never persists the `TELEGRAM_BASE_URL` environment override, and `auth_header` values are never echoed back by `show`/`get`.
 
 ## Troubleshooting
 **Not found errors (exit code 3)**

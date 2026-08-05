@@ -16,10 +16,7 @@ import (
 // read-time DACL guard without granting non-owner principals access.
 func lockSandbox(t *testing.T, path string) {
 	t.Helper()
-	tok, err := windows.OpenCurrentProcessToken()
-	if err != nil {
-		t.Fatalf("open process token: %v", err)
-	}
+	tok := windows.GetCurrentProcessToken()
 	defer tok.Close()
 	user, err := tok.GetTokenUser()
 	if err != nil {

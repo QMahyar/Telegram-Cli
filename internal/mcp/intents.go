@@ -17,7 +17,6 @@ package mcp
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -66,28 +65,6 @@ func init() {
 	recipeCLIPath, recipeCLIPathErr = cobratree.SiblingCLIPath()
 }
 
-func appendRecipePositional(args []string, value any, required bool) ([]string, bool) {
-	selected := recipeValueString(value)
-	if selected == "" {
-		return args, required
-	}
-	return append(args, selected), false
-}
-
-func appendRecipeStringFlag(args []string, name string, value any, defaultValue string, required bool, useEquals bool) ([]string, bool) {
-	selected := defaultValue
-	if value != nil {
-		selected = recipeValueString(value)
-	}
-	if selected == "" {
-		return args, required
-	}
-	if useEquals {
-		return append(args, "--"+name+"="+selected), false
-	}
-	return append(args, "--"+name, selected), false
-}
-
 func appendRecipeBoolFlag(args []string, name string, value any, defaultValue bool) []string {
 	selected := defaultValue
 	if v, ok := value.(bool); ok {
@@ -97,23 +74,4 @@ func appendRecipeBoolFlag(args []string, name string, value any, defaultValue bo
 		return append(args, "--"+name)
 	}
 	return args
-}
-
-func recipeValueString(value any) string {
-	switch v := value.(type) {
-	case string:
-		return strings.TrimSpace(v)
-	case float64:
-		return formatMCPParamValue(v)
-	case bool:
-		if v {
-			return "true"
-		}
-		return "false"
-	default:
-		if value == nil {
-			return ""
-		}
-		return fmt.Sprintf("%v", value)
-	}
 }

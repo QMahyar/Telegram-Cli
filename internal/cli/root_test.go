@@ -93,6 +93,10 @@ func TestIsCobraUsageError(t *testing.T) {
 		{"required flag(s) (plural)", errors.New("required flag(s) \"query\", \"vault\" not set"), true},
 		{"flag needs argument", errors.New("flag needs an argument: --query"), true},
 		{"invalid argument", errors.New("invalid argument \"abc\" for \"--limit\" flag: strconv.ParseInt: parsing \"abc\": invalid syntax"), true},
+		{"exact arg count", errors.New("accepts 2 arg(s), received 1"), true},
+		{"max arg count", errors.New("accepts at most 1 arg(s), received 3"), true},
+		{"range arg count", errors.New("accepts between 1 and 2 arg(s), received 3"), true},
+		{"min arg count", errors.New("requires at least 1 arg(s), only received 0"), true},
 		// Non-usage errors must NOT be flagged — they should retain their
 		// original (or wrapped *cliError) exit code.
 		{"API error pass-through", errors.New("API returned 500"), false},

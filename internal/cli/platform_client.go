@@ -38,6 +38,7 @@ var registeredPlatformSource *platformSourceRegistration
 
 const mcpBoundProfileEnv = "TELEGRAM_MCP_BOUND_PROFILE"
 
+//nolint:unused // extension point: platform credential source registration, invoked by a preserved hand-authored author file (see AGENTS.md)
 func registerPlatformSource(registration platformSourceRegistration) {
 	registration.Source = strings.ToLower(strings.TrimSpace(registration.Source))
 	if registration.Source == "" || registration.Adapter == nil {

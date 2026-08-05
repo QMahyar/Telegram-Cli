@@ -98,10 +98,8 @@ func newWatchCmd(flags *rootFlags) *cobra.Command {
 
 			err = mgr.DialAndRunWithUpdates(watchCtx, alias, handler, func(ctx context.Context, client *telegram.Client, api *tg.Client) error {
 				// Hold the stream open until --duration elapses.
-				select {
-				case <-ctx.Done():
-					return nil
-				}
+				<-ctx.Done()
+				return nil
 			})
 			if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 				return err

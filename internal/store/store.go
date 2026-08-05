@@ -10,6 +10,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"math"
@@ -317,7 +318,7 @@ func (s *Store) ensureColumn(ctx context.Context, conn *sql.Conn, table, column,
 	err := conn.QueryRowContext(ctx,
 		`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, table,
 	).Scan(&name)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
 	if err != nil {
@@ -800,6 +801,7 @@ func rebuildResourcesFTS(ctx context.Context, conn *sql.Conn) error {
 	if err != nil {
 		return fmt.Errorf("querying resources: %w", err)
 	}
+	defer rows.Close()
 
 	type resourceRow struct {
 		id           string
@@ -810,17 +812,12 @@ func rebuildResourcesFTS(ctx context.Context, conn *sql.Conn) error {
 	for rows.Next() {
 		var r resourceRow
 		if err := rows.Scan(&r.id, &r.resourceType, &r.data); err != nil {
-			_ = rows.Close()
 			return fmt.Errorf("scanning resource: %w", err)
 		}
 		resources = append(resources, r)
 	}
 	if err := rows.Err(); err != nil {
-		_ = rows.Close()
 		return fmt.Errorf("reading resource rows: %w", err)
-	}
-	if err := rows.Close(); err != nil {
-		return fmt.Errorf("closing resource rows: %w", err)
 	}
 
 	for _, r := range resources {
@@ -978,7 +975,7 @@ func (s *Store) Upsert(resourceType, id string, data json.RawMessage) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	if err := s.upsertGenericResourceTx(tx, resourceType, id, data); err != nil {
 		return err
@@ -1349,7 +1346,7 @@ func (s *Store) UpsertMirror(data json.RawMessage) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	if err := s.upsertGenericResourceTx(tx, "mirror", storageID, data); err != nil {
 		return err
@@ -1643,7 +1640,7 @@ func (s *Store) UpsertBatch(resourceType string, items []json.RawMessage) (int, 
 	if err != nil {
 		return 0, 0, fmt.Errorf("starting batch transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	var stored, skippedCount, extractFailures, typedFailures int
 	for i, item := range items {
@@ -1697,7 +1694,7 @@ func (s *Store) UpsertBatch(resourceType string, items []json.RawMessage) (int, 
 
 		if typedErr != nil {
 			if _, rbErr := tx.Exec("ROLLBACK TO SAVEPOINT " + savepoint); rbErr != nil {
-				return stored, extractFailures, fmt.Errorf("rollback to savepoint for %s/%s (typed err: %v): %w", resourceType, storageID, typedErr, rbErr)
+				return stored, extractFailures, fmt.Errorf("rollback to savepoint for %s/%s (typed err: %w): %w", resourceType, storageID, typedErr, rbErr)
 			}
 			if _, relErr := tx.Exec("RELEASE SAVEPOINT " + savepoint); relErr != nil {
 				return stored, extractFailures, fmt.Errorf("release savepoint after rollback for %s/%s: %w", resourceType, storageID, relErr)
@@ -1823,7 +1820,11 @@ func (s *Store) SaveSyncCursor(resourceType, cursor string) error {
 // GetSyncCursor returns the last pagination cursor for a resource type.
 func (s *Store) GetSyncCursor(resourceType string) string {
 	var cursor sql.NullString
-	s.db.QueryRow("SELECT last_cursor FROM sync_state WHERE resource_type = ?", resourceType).Scan(&cursor)
+	if err := s.db.QueryRow("SELECT last_cursor FROM sync_state WHERE resource_type = ?", resourceType).Scan(&cursor); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		// Non-missing-row failures surface as an empty cursor; the callers of
+		// this accessor treat "" as "no sync state", which is the safe default.
+		return ""
+	}
 	if cursor.Valid {
 		return cursor.String
 	}
@@ -2080,7 +2081,9 @@ func (s *Store) ListFieldSets(resourceType string, fields []string) ([]map[strin
 // GetLastSyncedAt returns the last sync timestamp for a resource type.
 func (s *Store) GetLastSyncedAt(resourceType string) string {
 	var ts sql.NullString
-	s.db.QueryRow("SELECT last_synced_at FROM sync_state WHERE resource_type = ?", resourceType).Scan(&ts)
+	if err := s.db.QueryRow("SELECT last_synced_at FROM sync_state WHERE resource_type = ?", resourceType).Scan(&ts); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return ""
+	}
 	if ts.Valid {
 		return ts.String
 	}
@@ -2192,7 +2195,7 @@ func (s *Store) ReconcilePartition(resourceType, genericScopeJSONPath, scopeValu
 	if err != nil {
 		return 0, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Seen-set membership is tested in Go, not SQL. Parent-keyed dependent rows
 	// carry a NUL-composite storage id ("<id>\x00<parent>", built by
@@ -2218,11 +2221,11 @@ func (s *Store) ReconcilePartition(resourceType, genericScopeJSONPath, scopeValu
 	if err != nil {
 		return 0, fmt.Errorf("reconcile %s: select victims: %w", resourceType, err)
 	}
+	defer rows.Close()
 	var victims []string
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
-			_ = rows.Close()
 			return 0, err
 		}
 		if _, ok := seen[BareResourceID(id)]; ok {
@@ -2230,7 +2233,6 @@ func (s *Store) ReconcilePartition(resourceType, genericScopeJSONPath, scopeValu
 		}
 		victims = append(victims, id)
 	}
-	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return 0, err
 	}
@@ -2291,27 +2293,27 @@ func (s *Store) ResolveByName(resourceType string, input string, matchFields ...
 		if err != nil {
 			return "", err
 		}
+		defer rows.Close()
 		for rows.Next() {
 			var id string
-			if rows.Scan(&id) == nil {
-				// Deduplicate
-				found := false
-				for _, m := range matches {
-					if m == id {
-						found = true
-						break
-					}
+			if err := rows.Scan(&id); err != nil {
+				return "", err
+			}
+			// Deduplicate
+			found := false
+			for _, m := range matches {
+				if m == id {
+					found = true
+					break
 				}
-				if !found {
-					matches = append(matches, id)
-				}
+			}
+			if !found {
+				matches = append(matches, id)
 			}
 		}
 		if err := rows.Err(); err != nil {
-			_ = rows.Close()
 			return "", err
 		}
-		_ = rows.Close()
 	}
 
 	switch len(matches) {
@@ -2320,7 +2322,7 @@ func (s *Store) ResolveByName(resourceType string, input string, matchFields ...
 	case 1:
 		return matches[0], nil
 	default:
-		hint := matches[0]
+		var hint string
 		if len(matches) > 5 {
 			hint = strings.Join(matches[:5], ", ") + "..."
 		} else {

@@ -4,6 +4,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -56,14 +57,14 @@ func ParseDeliverSink(spec string) (DeliverSink, error) {
 // Deliver routes a captured output buffer to the configured sink. stdout
 // is a no-op because the buffer has already been streamed to stdout via
 // the MultiWriter set up in root.go.
-func Deliver(sink DeliverSink, body []byte, compact bool) error {
+func Deliver(ctx context.Context, sink DeliverSink, body []byte, compact bool) error {
 	switch sink.Scheme {
 	case "", "stdout":
 		return nil
 	case "file":
 		return deliverFile(sink.Target, body)
 	case "webhook":
-		return deliverWebhook(sink.Target, body, compact)
+		return deliverWebhook(ctx, sink.Target, body, compact)
 	default:
 		return fmt.Errorf("unsupported deliver sink %q", sink.Scheme)
 	}
@@ -88,12 +89,12 @@ func deliverFile(path string, body []byte) error {
 	return nil
 }
 
-func deliverWebhook(url string, body []byte, compact bool) error {
+func deliverWebhook(ctx context.Context, url string, body []byte, compact bool) error {
 	contentType := "application/json"
 	if compact {
 		contentType = "application/x-ndjson"
 	}
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("building webhook request: %w", err)
 	}

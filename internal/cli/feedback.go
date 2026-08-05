@@ -4,6 +4,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -70,12 +71,12 @@ func appendFeedback(entry FeedbackEntry) error {
 	return json.NewEncoder(f).Encode(entry)
 }
 
-func postFeedback(url string, entry FeedbackEntry) error {
+func postFeedback(ctx context.Context, url string, entry FeedbackEntry) error {
 	body, err := json.Marshal(entry)
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("building feedback request: %w", err)
 	}
@@ -141,7 +142,7 @@ maintainer sees it.`,
 
 			upstreamResult := map[string]any{"sent": false}
 			if endpoint := feedbackEndpoint(); endpoint != "" && (send || feedbackAutoSend()) {
-				if err := postFeedback(endpoint, entry); err != nil {
+				if err := postFeedback(cmd.Context(), endpoint, entry); err != nil {
 					fmt.Fprintf(cmd.ErrOrStderr(), "warning: feedback upstream POST failed: %v\n", err)
 					upstreamResult["sent"] = false
 					upstreamResult["error"] = err.Error()

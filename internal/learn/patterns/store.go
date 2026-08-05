@@ -127,7 +127,7 @@ func Upsert(db *sql.DB, p Pattern) (int64, bool, error) {
 	if err != nil {
 		return 0, false, fmt.Errorf("patterns.Upsert begin: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	var existingID int64
 	err = tx.QueryRow(

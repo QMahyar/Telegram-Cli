@@ -98,10 +98,13 @@ func (cm *CooldownManager) Until(ctx context.Context, account, scope string) tim
 // IsBanned returns true if the account has a non-expired ban record.
 func (cm *CooldownManager) IsBanned(ctx context.Context, account string) bool {
 	var count int
-	cm.db.QueryRowContext(ctx,
+	if err := cm.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM tg_cooldowns WHERE account = ? AND kind = 'BANNED' AND until_unix > ?`,
 		account, time.Now().Unix(),
-	).Scan(&count)
+	).Scan(&count); err != nil {
+		// A failed query must not read as "banned": the safe default is false.
+		return false
+	}
 	return count > 0
 }
 

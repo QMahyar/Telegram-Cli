@@ -4,6 +4,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -54,10 +55,6 @@ func (s *Store) UpsertPlaybook(in UpsertPlaybookInput) (int64, bool, error) {
 	if strings.TrimSpace(in.PlaybookJSON) == "" && strings.TrimSpace(in.NotesText) == "" {
 		return 0, false, fmt.Errorf("upsert playbook: at least one of playbook_json or notes_text must be non-empty")
 	}
-	source := in.Source
-	if source == "" {
-		source = LearningSourceTaught
-	}
 
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
@@ -67,7 +64,7 @@ func (s *Store) UpsertPlaybook(in UpsertPlaybookInput) (int64, bool, error) {
 	if err != nil {
 		return 0, false, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	id, inserted, err := upsertPlaybookTx(tx, in, now)
 	if err != nil {
@@ -124,7 +121,7 @@ func upsertPlaybookTx(tx *sql.Tx, in UpsertPlaybookInput, now time.Time) (int64,
 		}
 		return existingID, false, nil
 	}
-	if err != sql.ErrNoRows {
+	if !errors.Is(err, sql.ErrNoRows) {
 		return 0, false, fmt.Errorf("upsert playbook lookup: %w", err)
 	}
 
@@ -168,7 +165,7 @@ func (s *Store) AppendPlaybookNotes(family, marker string) (int64, bool, error) 
 	if err != nil {
 		return 0, false, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	id, inserted, err := appendPlaybookNotesTx(tx, family, marker, now)
 	if err != nil {

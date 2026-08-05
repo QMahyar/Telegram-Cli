@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -94,7 +96,9 @@ func newAccountsAddCmd(flags *rootFlags) *cobra.Command {
 						}
 						fmt.Fprintf(os.Stderr, "Enter the code sent to %s: ", phone)
 						var c string
-						fmt.Scanln(&c)
+						if _, err := fmt.Scanln(&c); err != nil {
+							return "", fmt.Errorf("reading login code from stdin: %w (pass --code to log in non-interactively)", err)
+						}
 						return strings.TrimSpace(c), nil
 					}
 					pwdFn := func(ctx context.Context) (string, error) {
@@ -106,7 +110,9 @@ func newAccountsAddCmd(flags *rootFlags) *cobra.Command {
 						}
 						fmt.Fprint(os.Stderr, "Enter 2FA password (leave empty if none): ")
 						var pwd string
-						fmt.Scanln(&pwd)
+						if _, err := fmt.Scanln(&pwd); err != nil {
+							return "", fmt.Errorf("reading 2FA password from stdin: %w (pass --password to log in non-interactively)", err)
+						}
 						return strings.TrimSpace(pwd), nil
 					}
 					return mtproto.LoginPhone(ctx, client, phone, codeFn, pwdFn)
@@ -174,6 +180,9 @@ func newAccountsListCmd(flags *rootFlags) *cobra.Command {
 					return err
 				}
 				accounts = append(accounts, a)
+			}
+			if err := rows.Err(); err != nil {
+				return fmt.Errorf("reading accounts: %w", err)
 			}
 			f := parseTelegramFlags(cmd)
 			return outResult(stdout(), f, accounts)
@@ -248,7 +257,9 @@ func newAccountsRenameCmd(flags *rootFlags) *cobra.Command {
 			oldDir := filepath.Join(home, "sessions", oldAlias)
 			newDir := filepath.Join(home, "sessions", newAlias)
 			if _, err := os.Stat(oldDir); err == nil {
-				os.Rename(oldDir, newDir)
+				if err := os.Rename(oldDir, newDir); err != nil {
+					return fmt.Errorf("renaming session directory %q to %q: %w", oldDir, newDir, err)
+				}
 			}
 			fmt.Fprintf(os.Stderr, "Renamed %q → %q.\n", oldAlias, newAlias)
 			return mutationResult(parseTelegramFlags(cmd), map[string]any{"from": oldAlias, "to": newAlias})
@@ -282,7 +293,9 @@ func newAccountsRemoveCmd(flags *rootFlags) *cobra.Command {
 					})
 				}
 			}
-			s.DB().ExecContext(ctx, `DELETE FROM tg_accounts WHERE alias = ?`, alias)
+			if _, err := s.DB().ExecContext(ctx, `DELETE FROM tg_accounts WHERE alias = ?`, alias); err != nil {
+				return fmt.Errorf("removing account %q from local registry: %w", alias, err)
+			}
 			if !keepSession {
 				os.RemoveAll(filepath.Join(home, "sessions", alias))
 			}
@@ -391,18 +404,27 @@ func newAccountsHealthCmd(flags *rootFlags) *cobra.Command {
 				if err := rows.Scan(&h.Alias, &h.UserID, &h.Username, &h.Phone, &h.Status); err != nil {
 					return err
 				}
-				s.DB().QueryRowContext(ctx,
+				if err := s.DB().QueryRowContext(ctx,
 					`SELECT COALESCE(SUM(unread_count), 0) FROM tg_dialogs WHERE account = ?`, h.Alias,
-				).Scan(&h.UnreadTotal)
+				).Scan(&h.UnreadTotal); err != nil {
+					return fmt.Errorf("reading unread total for %q: %w", h.Alias, err)
+				}
 				var until int64
 				err := s.DB().QueryRowContext(ctx,
 					`SELECT until_unix FROM tg_cooldowns WHERE account = ? AND until_unix > ? ORDER BY until_unix LIMIT 1`,
 					h.Alias, time.Now().Unix(),
 				).Scan(&until)
-				if err == nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					h.Cooldown = ""
+				} else if err != nil {
+					return fmt.Errorf("reading cooldown for %q: %w", h.Alias, err)
+				} else {
 					h.Cooldown = time.Unix(until, 0).Format(time.RFC3339)
 				}
 				items = append(items, h)
+			}
+			if err := rows.Err(); err != nil {
+				return fmt.Errorf("reading account health: %w", err)
 			}
 			f := parseTelegramFlags(cmd)
 			return outResult(stdout(), f, items)

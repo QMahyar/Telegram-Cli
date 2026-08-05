@@ -4,7 +4,6 @@ package store
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -151,7 +150,7 @@ func (s *Store) GetCandidate(id int64) (CandidateRow, bool, error) {
 	row, err := scanCandidate(s.db.QueryRow(
 		candidateSelectColumns+` FROM learn_candidates WHERE id = ?`, id,
 	))
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return CandidateRow{}, false, nil
 	}
 	if err != nil {
@@ -164,7 +163,7 @@ func (s *Store) getCandidateBySignature(signature string) (CandidateRow, bool, e
 	row, err := scanCandidate(s.db.QueryRow(
 		candidateSelectColumns+` FROM learn_candidates WHERE derivation_signature = ?`, signature,
 	))
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return CandidateRow{}, false, nil
 	}
 	if err != nil {
@@ -225,7 +224,7 @@ func (s *Store) ConfirmCandidate(id int64) (CandidateRow, error) {
 	if err != nil {
 		return CandidateRow{}, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	now := time.Now().UTC()
 	row, err := confirmCandidateTx(tx, id, now)
@@ -246,7 +245,7 @@ func (s *Store) ConfirmCandidateWithPlaybook(id int64, in UpsertPlaybookInput) (
 	if err != nil {
 		return CandidateRow{}, 0, false, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	row, err := getOpenCandidateForConfirmTx(tx, id)
 	if err != nil {
@@ -279,7 +278,7 @@ func (s *Store) ConfirmCandidateWithPlaybookNote(id int64, family, marker string
 	if err != nil {
 		return CandidateRow{}, 0, false, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	row, err := getOpenCandidateForConfirmTx(tx, id)
 	if err != nil {
@@ -316,7 +315,7 @@ func getOpenCandidateForConfirmTx(tx *sql.Tx, id int64) (CandidateRow, error) {
 	row, err := scanCandidate(tx.QueryRow(
 		candidateSelectColumns+` FROM learn_candidates WHERE id = ?`, id,
 	))
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return CandidateRow{}, fmt.Errorf("confirm candidate: no candidate with id %d", id)
 	}
 	if err != nil {
@@ -357,12 +356,12 @@ func (s *Store) RejectCandidate(id int64) (CandidateRow, error) {
 	if err != nil {
 		return CandidateRow{}, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	row, err := scanCandidate(tx.QueryRow(
 		candidateSelectColumns+` FROM learn_candidates WHERE id = ?`, id,
 	))
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return CandidateRow{}, fmt.Errorf("reject candidate: no candidate with id %d", id)
 	}
 	if err != nil {
@@ -440,21 +439,6 @@ func (s *Store) PurgeCandidates(includeTombstones bool) (int64, error) {
 		return 0, fmt.Errorf("purge candidates: %w", err)
 	}
 	return res.RowsAffected()
-}
-
-// candidateFamily resolves the query-family anchor for a candidate:
-// the row column when set, else the payload's query_family field.
-func candidateFamily(row CandidateRow) string {
-	if strings.TrimSpace(row.QueryFamily) != "" {
-		return strings.TrimSpace(row.QueryFamily)
-	}
-	var p struct {
-		QueryFamily string `json:"query_family"`
-	}
-	if err := json.Unmarshal([]byte(row.Payload), &p); err != nil {
-		return ""
-	}
-	return strings.TrimSpace(p.QueryFamily)
 }
 
 const candidateSelectColumns = `SELECT id, class, payload, derivation_signature, sightings, status,

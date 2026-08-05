@@ -14,3 +14,19 @@ formatters:
   enable:
     - gofmt
     - goimports
+
+issues:
+  # The generic-HTTP API scaffold (surviving from the tree's generator, which
+  # this Telegram MTProto CLI absorbed) ships a dead read/pagination framework
+  # in these two files: resolveRead*/resolvePaginatedRead*, the write-through
+  # cache, response-path extraction, and the generic makeAPIHandler MCP tool.
+  # The live surface (novel Telegram commands, cobratree-mirrored MCP tools)
+  # never calls them, and the repo's regeneration contract (AGENTS.md) says
+  # hand-edits to generated output stay narrow — so the dead scaffold is kept
+  # for the generator and excluded from lint reporting. When the generator is
+  # retired, delete these entries and remove the dead symbols.
+  # NOTE: `exclude-rules` does not apply in golangci-lint v1.64.x; file-level
+  # exclusion is the only reliable mechanism here.
+  exclude-files:
+    - helpers\.go$
+    - tools\.go$

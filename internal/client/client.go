@@ -507,10 +507,6 @@ func pathWithQueryValues(path string, params url.Values) string {
 	return path + separator + encoded
 }
 
-func (c *Client) readCache(path string, params map[string]string) (json.RawMessage, bool) {
-	return c.readCacheWithHeaders(path, params, nil)
-}
-
 func (c *Client) readCacheWithHeaders(path string, params map[string]string, headers map[string]string) (json.RawMessage, bool) {
 	cacheFile := filepath.Join(c.cacheResourceDir(path), c.cacheKeyFor(http.MethodGet, path, params, headers, nil)+".json")
 	info, err := os.Stat(cacheFile)
@@ -1137,7 +1133,7 @@ func (c *Client) dryRun(method, targetURL, path string, params map[string]string
 			enc := json.NewEncoder(os.Stderr)
 			enc.SetIndent("  ", "  ")
 			fmt.Fprintf(os.Stderr, "  Body:\n")
-			enc.Encode(pretty)
+			_ = enc.Encode(pretty) // debug dump on stderr; encoding failure is not actionable
 		}
 	}
 	if authHeader != "" {

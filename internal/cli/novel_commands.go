@@ -98,10 +98,12 @@ func newNovelBroadcastCmd(flags *rootFlags) *cobra.Command {
 				}
 				time.Sleep(2 * time.Second) // pace between sends
 			}
-			s.DB().ExecContext(ctx,
+			if _, err := s.DB().ExecContext(ctx,
 				`UPDATE tg_jobs SET status = 'done', finished_at = datetime('now'), error = ? WHERE id = ?`,
 				fmt.Sprintf("sent=%d failed=%d", sent, failed), jobID,
-			)
+			); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to mark job %d done: %v\n", jobID, err)
+			}
 			fmt.Fprintf(os.Stderr, "\nBroadcast complete: %d sent, %d failed.\n", sent, failed)
 			return nil
 		},
@@ -248,18 +250,22 @@ func newBatchForwardCmd(flags *rootFlags) *cobra.Command {
 					r.Status = "ok"
 				}
 				results = append(results, r)
-				s.DB().ExecContext(ctx,
+				if _, err := s.DB().ExecContext(ctx,
 					`INSERT OR REPLACE INTO tg_job_results (job_id, account, target, status, detail, message_id, updated_at)
 					 VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))`,
 					jobID, alias, ref, r.Status, r.Detail, r.Message,
-				)
+				); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: failed to record job result for %s/%s: %v\n", alias, ref, err)
+				}
 				time.Sleep(pace)
 			}
 
-			s.DB().ExecContext(ctx,
+			if _, err := s.DB().ExecContext(ctx,
 				`UPDATE tg_jobs SET status = 'done', finished_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), error = ? WHERE id = ?`,
 				fmt.Sprintf("sent=%d failed=%d", sent, failed), jobID,
-			)
+			); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to mark job %d done: %v\n", jobID, err)
+			}
 			writeAuditRecord(ctx, s.DB(), alias, "batch forward", fromRef, string(paramsJSON), fmt.Sprintf("sent=%d failed=%d", sent, failed), "")
 
 			out := map[string]any{
@@ -316,8 +322,13 @@ func newNovelInboxCmd(flags *rootFlags) *cobra.Command {
 			var items []inboxItem
 			for rows.Next() {
 				var item inboxItem
-				rows.Scan(&item.Account, &item.Title, &item.Unread)
+				if err := rows.Scan(&item.Account, &item.Title, &item.Unread); err != nil {
+					return fmt.Errorf("scanning inbox row: %w", err)
+				}
 				items = append(items, item)
+			}
+			if err := rows.Err(); err != nil {
+				return fmt.Errorf("reading inbox rows: %w", err)
 			}
 			f := parseTelegramFlags(cmd)
 			return outResult(stdout(), f, items)
@@ -349,9 +360,15 @@ func newNovelStatsCmd(flags *rootFlags) *cobra.Command {
 				TotalAccounts int `json:"total_accounts"`
 			}
 			var st stats
-			s.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM tg_messages`).Scan(&st.TotalMessages)
-			s.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM tg_dialogs`).Scan(&st.TotalDialogs)
-			s.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM tg_accounts`).Scan(&st.TotalAccounts)
+			if err := s.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM tg_messages`).Scan(&st.TotalMessages); err != nil {
+				return fmt.Errorf("counting messages: %w", err)
+			}
+			if err := s.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM tg_dialogs`).Scan(&st.TotalDialogs); err != nil {
+				return fmt.Errorf("counting dialogs: %w", err)
+			}
+			if err := s.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM tg_accounts`).Scan(&st.TotalAccounts); err != nil {
+				return fmt.Errorf("counting accounts: %w", err)
+			}
 			f := parseTelegramFlags(cmd)
 			return outResult(stdout(), f, st)
 		},
@@ -399,8 +416,13 @@ func newNovelSinceCmd(flags *rootFlags) *cobra.Command {
 			var items []mtproto.MessageItem
 			for rows.Next() {
 				var m mtproto.MessageItem
-				rows.Scan(&m.MsgID, &m.Sender, &m.Text, &m.Date)
+				if err := rows.Scan(&m.MsgID, &m.Sender, &m.Text, &m.Date); err != nil {
+					return fmt.Errorf("scanning message row: %w", err)
+				}
 				items = append(items, m)
+			}
+			if err := rows.Err(); err != nil {
+				return fmt.Errorf("reading message rows: %w", err)
 			}
 			return outResult(stdout(), f, items)
 		},
@@ -483,8 +505,13 @@ func newNovelDigestCmd(flags *rootFlags) *cobra.Command {
 			var items []digestEntry
 			for rows.Next() {
 				var d digestEntry
-				rows.Scan(&d.Account, &d.Title, &d.Count)
+				if err := rows.Scan(&d.Account, &d.Title, &d.Count); err != nil {
+					return fmt.Errorf("scanning digest row: %w", err)
+				}
 				items = append(items, d)
+			}
+			if err := rows.Err(); err != nil {
+				return fmt.Errorf("reading digest rows: %w", err)
 			}
 			f := parseTelegramFlags(cmd)
 			return outResult(stdout(), f, items)
@@ -590,8 +617,13 @@ func newNovelJobsCmd(flags *rootFlags) *cobra.Command {
 			var items []jobInfo
 			for rows.Next() {
 				var j jobInfo
-				rows.Scan(&j.ID, &j.Kind, &j.Status, &j.Targets, &j.CreatedAt, &j.FinishedAt, &j.Error)
+				if err := rows.Scan(&j.ID, &j.Kind, &j.Status, &j.Targets, &j.CreatedAt, &j.FinishedAt, &j.Error); err != nil {
+					return fmt.Errorf("scanning job row: %w", err)
+				}
 				items = append(items, j)
+			}
+			if err := rows.Err(); err != nil {
+				return fmt.Errorf("reading job rows: %w", err)
 			}
 			f := parseTelegramFlags(cmd)
 			return outResult(stdout(), f, items)

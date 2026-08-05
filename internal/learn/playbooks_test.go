@@ -397,6 +397,9 @@ func storedFamilyKeys(t *testing.T, db *sql.DB) []string {
 		}
 		out = append(out, f)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("list families: %v", err)
+	}
 	return out
 }
 

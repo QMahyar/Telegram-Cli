@@ -4,6 +4,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -56,7 +57,6 @@ type rootFlags struct {
 	timeout                 time.Duration
 	rateLimit               float64
 	dataSource              string
-	freshnessMeta           any
 
 	// deliverBuf captures command output when --deliver is set to a
 	// non-stdout sink. Flushed to the sink after Execute returns.
@@ -71,6 +71,7 @@ type rootFlags struct {
 // another.
 var novelCommandHooks []func(root *cobra.Command, flags *rootFlags)
 
+//nolint:unused // extension point: registered by a preserved same-package author file via init (see AGENTS.md)
 func registerNovelCommand(hook func(root *cobra.Command, flags *rootFlags)) {
 	novelCommandHooks = append(novelCommandHooks, hook)
 }
@@ -89,6 +90,7 @@ func addNovelCommandIfAbsent(parent *cobra.Command, candidate *cobra.Command) {
 // client construction; they must not perform provider-specific behavior here.
 var clientHooks []func(*client.Client) error
 
+//nolint:unused // extension point: registered by a preserved same-package author file via init (see AGENTS.md)
 func registerClientHook(hook func(*client.Client) error) {
 	clientHooks = append(clientHooks, hook)
 }
@@ -142,7 +144,7 @@ func Execute() (retErr error) {
 		}
 	}
 	if err == nil && flags.deliverBuf != nil {
-		if derr := Deliver(flags.deliverSink, flags.deliverBuf.Bytes(), flags.compact); derr != nil {
+		if derr := Deliver(context.Background(), flags.deliverSink, flags.deliverBuf.Bytes(), flags.compact); derr != nil {
 			fmt.Fprintf(os.Stderr, "warning: deliver to %s:%s failed: %v\n", flags.deliverSink.Scheme, flags.deliverSink.Target, derr)
 			return derr
 		}
@@ -215,7 +217,11 @@ func isCobraUsageError(err error) bool {
 		strings.HasPrefix(msg, `required flag "`) ||
 		strings.HasPrefix(msg, `required flag(s) "`) ||
 		strings.HasPrefix(msg, "flag needs an argument:") ||
-		strings.HasPrefix(msg, `invalid argument "`)
+		strings.HasPrefix(msg, `invalid argument "`) ||
+		// Cobra arg-count validation (cobra.ExactArgs/MinimumNArgs/...)
+		// is usage-class too: the command syntax itself is wrong.
+		strings.HasPrefix(msg, "accepts ") ||
+		strings.HasPrefix(msg, "requires at least ")
 }
 
 func newRootCmd(flags *rootFlags) *cobra.Command {
@@ -354,7 +360,11 @@ See README.md or the bundled SKILL.md for recipes.`,
 		case "auto", "live", "local":
 			// valid
 		default:
-			return fmt.Errorf("invalid --data-source value %q: must be auto, live, or local", flags.dataSource)
+			// Flag-value validation failures are usage errors: they must exit 2
+			// with type "usage", never fall through as an undocumented exit 1
+			// (the README exit-code contract and agent-cli-builder both demand
+			// this; a typo'd enum value is exactly what agents produce).
+			return usageErr(fmt.Errorf("invalid --data-source value %q: must be auto, live, or local", flags.dataSource))
 		}
 		// Seed entity_lookups from spec.Learn.EntityLookupSeeds once per
 		// process. Skipped for framework commands that should never

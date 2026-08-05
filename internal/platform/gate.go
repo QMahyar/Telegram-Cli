@@ -437,7 +437,7 @@ func InitializeTenantMetadata(ctx context.Context, db *sql.DB, session *Session,
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(ctx, tenantMetadataDDL); err != nil {
 		return fmt.Errorf("create tenant metadata: %w", err)
 	}

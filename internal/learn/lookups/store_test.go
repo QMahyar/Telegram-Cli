@@ -338,7 +338,7 @@ func TestSeedBatch_InsertsAndIdempotent(t *testing.T) {
 	}
 	inserted, err := SeedBatch(tx, seeds)
 	if err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		t.Fatalf("SeedBatch: %v", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -354,7 +354,7 @@ func TestSeedBatch_InsertsAndIdempotent(t *testing.T) {
 	}
 	inserted2, err := SeedBatch(tx2, seeds)
 	if err != nil {
-		tx2.Rollback()
+		_ = tx2.Rollback()
 		t.Fatalf("second SeedBatch: %v", err)
 	}
 	if err := tx2.Commit(); err != nil {
@@ -384,7 +384,7 @@ func TestSeedBatch_DefaultsSource(t *testing.T) {
 		t.Fatalf("begin: %v", err)
 	}
 	if _, err := SeedBatch(tx, seeds); err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		t.Fatalf("SeedBatch: %v", err)
 	}
 	if err := tx.Commit(); err != nil {

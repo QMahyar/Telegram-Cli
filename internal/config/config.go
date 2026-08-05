@@ -13,16 +13,32 @@ import (
 )
 
 type Config struct {
-	BaseURL       string            `toml:"base_url"`
-	AuthHeaderVal string            `toml:"auth_header"`
+	BaseURL       string            `toml:"base_url,omitempty"`
+	AuthHeaderVal string            `toml:"auth_header,omitempty"`
 	Headers       map[string]string `toml:"headers,omitempty"`
 	AuthSource    string            `toml:"-"`
 	Path          string            `toml:"-"`
-	envOverrides  map[string]bool   `toml:"-"`
-	fileConfig    *Config           `toml:"-"`
 }
 
 func Load(configPath string) (*Config, error) {
+	cfg, err := LoadForEdit(configPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Env var overrides
+
+	// Base URL override (used by the verify harness to point at mock/test servers)
+	if v := os.Getenv("TELEGRAM_BASE_URL"); v != "" {
+		cfg.BaseURL = v
+	}
+	return cfg, nil
+}
+
+// LoadForEdit loads configuration exactly like Load, but without environment
+// overrides. Write flows (config set/unset) must go through this so an env
+// override is never persisted into the config file.
+func LoadForEdit(configPath string) (*Config, error) {
 	cfg := &Config{}
 
 	// Resolve config path
@@ -64,16 +80,49 @@ func Load(configPath string) (*Config, error) {
 		}
 	}
 	cfg.Path = path
-
-	cfg.snapshotFileConfig()
-
-	// Env var overrides
-
-	// Base URL override (used by the verify harness to point at mock/test servers)
-	if v := os.Getenv("TELEGRAM_BASE_URL"); v != "" {
-		cfg.BaseURL = v
-	}
 	return cfg, nil
+}
+
+// Save writes cfg to path atomically (temp file + fsync + rename) with
+// owner-only permissions, creating the parent directory if needed. Runtime
+// fields (Path, AuthSource) and empty headers are not serialized.
+func Save(path string, cfg *Config) error {
+	if strings.TrimSpace(path) == "" {
+		return fmt.Errorf("save config: empty path")
+	}
+	data, err := toml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("encoding config: %w", err)
+	}
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("creating config directory: %w", err)
+	}
+	tmp, err := os.CreateTemp(dir, ".config-*.toml")
+	if err != nil {
+		return fmt.Errorf("creating temporary config file: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer func() { _ = os.Remove(tmpName) }()
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("hardening config file permissions: %w", err)
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("writing config: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("syncing config: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("closing config: %w", err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return fmt.Errorf("installing config: %w", err)
+	}
+	return nil
 }
 
 func resolveConfigPath(configPath string) (string, bool, error) {
@@ -128,90 +177,3 @@ func (c *Config) CredentialConfigured() bool {
 	}
 	return c.AuthHeader() != ""
 }
-
-func applyAuthFormat(format string, replacements map[string]string) string {
-	if format == "" {
-		return ""
-	}
-	for key, value := range replacements {
-		format = strings.ReplaceAll(format, "{"+key+"}", value)
-	}
-	if strings.Contains(format, "{") {
-		return ""
-	}
-	return format
-}
-
-func (c *Config) markEnvOverride(field string) {
-	if c.envOverrides == nil {
-		c.envOverrides = map[string]bool{}
-	}
-	c.envOverrides[field] = true
-}
-
-// cloneStringMap returns an independent copy of m (nil stays nil). The fileConfig
-// snapshot must not share reference-type map fields (such as Headers) with the
-// live config, or a later mutation to one would silently track in the other.
-func cloneStringMap(m map[string]string) map[string]string {
-	if m == nil {
-		return nil
-	}
-	out := make(map[string]string, len(m))
-	for k, v := range m {
-		out[k] = v
-	}
-	return out
-}
-
-func (c *Config) snapshotFileConfig() {
-	snapshot := *c
-	snapshot.envOverrides = nil
-	snapshot.fileConfig = nil
-	// *c is a shallow copy: map fields are reference types, so the snapshot would
-	// share them with c and silently track later mutations, defeating the
-	// isolation this snapshot exists to provide. Clone them.
-	snapshot.Headers = cloneStringMap(c.Headers)
-	c.fileConfig = &snapshot
-}
-
-func (c *Config) configForSave() Config {
-	out := *c
-	if c.fileConfig != nil {
-	}
-	out.envOverrides = nil
-	out.fileConfig = nil
-	return out
-}
-
-func (c *Config) updateFileConfigField(field string) {
-	if c.fileConfig == nil || c.envOverrides[field] {
-		return
-	}
-	switch field {
-	case "AuthHeaderVal":
-		c.fileConfig.AuthHeaderVal = c.AuthHeaderVal
-	}
-}
-
-func (c *Config) save() error {
-	persisted := c.configForSave()
-	var persist any = persisted
-	data, err := toml.Marshal(persist)
-	if err != nil {
-		return fmt.Errorf("marshaling config: %w", err)
-	}
-	if err := cliutil.AtomicWritePrivateFile(c.Path, data, 0o600, 0o700); err != nil {
-		return err
-	}
-	c.fileConfig = &persisted
-	c.fileConfig.envOverrides = nil
-	c.fileConfig.fileConfig = nil
-	// persisted shares its map fields with c (configForSave shallow-copies *c),
-	// so isolate the stored fileConfig the same way snapshotFileConfig does;
-	// otherwise later mutations to c's maps leak into the on-disk snapshot.
-	c.fileConfig.Headers = cloneStringMap(c.fileConfig.Headers)
-	return nil
-}
-
-// Ensure strings import is used
-var _ = strings.ReplaceAll

@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -327,7 +328,7 @@ func (s *Store) UpsertLearning(ctx context.Context, in UpsertLearningInput) (int
 	if err != nil {
 		return 0, false, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	var existingID int64
 	err = tx.QueryRowContext(ctx,
@@ -349,7 +350,7 @@ func (s *Store) UpsertLearning(ctx context.Context, in UpsertLearningInput) (int
 		}
 		return existingID, false, nil
 	}
-	if err != sql.ErrNoRows {
+	if !errors.Is(err, sql.ErrNoRows) {
 		return 0, false, fmt.Errorf("upsert learning lookup: %w", err)
 	}
 

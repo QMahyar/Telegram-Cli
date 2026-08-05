@@ -46,7 +46,7 @@ func SeedFromConfig(db *sql.DB, seedsByKind map[string][]SeedConfig) (int, error
 	if err != nil {
 		return 0, fmt.Errorf("lookups.SeedFromConfig begin: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	rows := make([]LookupRow, 0)
 	for kind, seeds := range seedsByKind {

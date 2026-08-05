@@ -98,11 +98,13 @@ func newSyncCmd(flags *rootFlags) *cobra.Command {
 						return err
 					}
 					for _, m := range msgs {
-						s.DB().ExecContext(ctx,
+						if _, err := s.DB().ExecContext(ctx,
 							`INSERT OR REPLACE INTO tg_messages (account, peer_type, peer_id, msg_id, date, sender_id, sender, text, media_type, outgoing)
 							 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 							alias, peerType, peerID, m.MsgID, m.Date, m.SenderID, m.Sender, m.Text, m.Media, boolToInt(m.Outgoing),
-						)
+						); err != nil {
+							return fmt.Errorf("persisting message %d from %s: %w", m.MsgID, args[0], err)
+						}
 					}
 					fmt.Fprintf(cmd.ErrOrStderr(), "Synced %d messages from %s.\n", len(msgs), args[0])
 					return nil
@@ -113,16 +115,20 @@ func newSyncCmd(flags *rootFlags) *cobra.Command {
 				}
 				// Save dialogs and peers to the mirror
 				for _, d := range dialogs {
-					s.DB().ExecContext(ctx,
+					if _, err := s.DB().ExecContext(ctx,
 						`INSERT OR REPLACE INTO tg_dialogs (account, peer_type, peer_id, title, username, unread_count, last_msg_id, pinned)
 						 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 						alias, d.PeerType, d.PeerID, d.Title, d.Username, d.Unread, d.LastMsgID, d.Pinned,
-					)
-					s.DB().ExecContext(ctx,
+					); err != nil {
+						return fmt.Errorf("persisting dialog %s: %w", d.Title, err)
+					}
+					if _, err := s.DB().ExecContext(ctx,
 						`INSERT OR REPLACE INTO tg_peers (account, peer_type, peer_id, access_hash, title, username, updated_at)
 					 VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))`,
 						alias, d.PeerType, d.PeerID, d.AccessHash, d.Title, d.Username,
-					)
+					); err != nil {
+						return fmt.Errorf("persisting peer %s: %w", d.Title, err)
+					}
 				}
 				fmt.Fprintf(cmd.ErrOrStderr(), "Synced %d dialogs for %s.\n", len(dialogs), alias)
 				return nil
