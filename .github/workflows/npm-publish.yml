@@ -1,0 +1,63 @@
+name: npm-publish
+
+# Publishes the @qmahyar/telegram-cli npm package. Runs automatically when a
+# GitHub Release is published (the release workflow above), and can be
+# triggered manually for a specific tag with:
+#   gh workflow run npm-publish.yml -f tag=v0.1.0
+#
+# Requires the NPM_TOKEN repository secret (npm > Access Tokens > Generate
+# New Token > Automation; scope: @qmahyar/telegram-cli). Until that secret
+# exists this workflow reports the skip instead of failing the release.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (e.g. v0.1.0)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tag
+        id: tag
+        run: |
+          TAG="${{ github.event.release.tag_name || inputs.tag }}"
+          echo "tag=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: "v${{ steps.tag.outputs.tag }}"
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: npm publish
+        if: ${{ secrets.NPM_TOKEN != '' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.tag.outputs.tag }}"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          test "$(node -p "require('./package.json').version")" = "$VERSION"
+          npm pack --dry-run >/dev/null  # sanity: "files" list resolves
+          npm publish --access public
+          echo "published @qmahyar/telegram-cli@$VERSION"
+
+      - name: Report skip
+        if: ${{ secrets.NPM_TOKEN == '' }}
+        run: |
+          echo "NPM_TOKEN secret not set — npm publish skipped."
+          echo "Add it (repo Settings > Secrets > Actions > NPM_TOKEN, value: an npm automation token"
+          echo "scoped to @qmahyar/telegram-cli), then re-publish with:"
+          echo "  gh workflow run npm-publish.yml -f tag=v${{ steps.tag.outputs.tag }}"
+          echo "or manually:  npm version ${{ steps.tag.outputs.tag }} --no-git-tag-version && npm publish --access public"

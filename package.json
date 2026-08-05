@@ -1,0 +1,39 @@
+{
+  "name": "@qmahyar/telegram-cli",
+  "version": "0.0.0-dev",
+  "description": "Multi-account Telegram MTProto CLI: unified search, flood-aware broadcasts, audited batch jobs, and an agent-native MCP server",
+  "license": "Apache-2.0",
+  "type": "commonjs",
+  "bin": {
+    "telegram-cli": "bin/telegram-cli.js"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install.js"
+  },
+  "files": [
+    "bin/telegram-cli.js",
+    "scripts/install.js",
+    "README.md",
+    "LICENSE",
+    "RELEASING.md"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "keywords": [
+    "telegram",
+    "mtproto",
+    "cli",
+    "mcp",
+    "agent",
+    "broadcast"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/QMahyar/Telegram-Cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/QMahyar/Telegram-Cli/issues"
+  },
+  "homepage": "https://github.com/QMahyar/Telegram-Cli#readme"
+}

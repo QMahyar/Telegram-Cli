@@ -30,7 +30,13 @@ go install ./cmd/telegram-mcp
 
 ### Pre-built binary
 
-Download a pre-built binary for your platform from [GitHub Releases](https://github.com/QMahyar/Telegram-Cli/releases). On macOS, clear the Gatekeeper quarantine: `xattr -d com.apple.quarantine <binary>`. On Unix, mark it executable: `chmod +x <binary>`.
+Install from npm (downloads the platform binary from GitHub Releases on install):
+
+```bash
+npm install -g @qmahyar/telegram-cli
+```
+
+or download a pre-built binary for your platform from [GitHub Releases](https://github.com/QMahyar/Telegram-Cli/releases). On macOS, clear the Gatekeeper quarantine: `xattr -d com.apple.quarantine <binary>`. On Unix, mark it executable: `chmod +x <binary>`.
 
 ### Agent skill
 

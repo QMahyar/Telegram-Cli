@@ -1,0 +1,65 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -count=1 ./...
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.64
+
+  dist-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # The release pipeline depends on scripts/dist.sh producing the exact
+      # asset names scripts/install.js resolves; prove it here on every push.
+      - name: Build dist matrix
+        run: bash scripts/dist.sh 0.0.0-ci
+        shell: bash
+
+      - name: Assert asset names
+        run: |
+          for asset in telegram-cli-linux-amd64 telegram-cli-linux-arm64 \
+                       telegram-cli-darwin-amd64 telegram-cli-darwin-arm64 \
+                       telegram-cli-windows-amd64.exe telegram-cli-windows-arm64.exe; do
+            test -f "dist/$asset" || { echo "missing dist/$asset"; exit 1; }
+          done
+          test -f dist/SHA256SUMS || { echo "missing SHA256SUMS"; exit 1; }
+          echo "dist matrix OK"
+
+      - name: Assert version ldflags work
+        run: ./dist/telegram-cli-linux-amd64 version | grep -q "0.0.0-ci"

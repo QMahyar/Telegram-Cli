@@ -531,3 +531,13 @@ Parse `$ARGUMENTS`:
    telegram-cli <command> [subcommand] [args] --agent
    ```
 4. If ambiguous, drill into subcommand help: `telegram-cli <command> --help`.
+
+## Releasing
+
+Shipping a version is fully pipeline-driven; `RELEASING.md` is the canonical reference. The invariants:
+
+- **Tag = version.** `git push origin vX.Y.Z` is the entire release; the binary stamps the tag via ldflags and the npm package version derives from it.
+- Two permanent workflows do the work: `release.yml` (tag → GitHub Release with the `scripts/dist.sh` matrix: `telegram-cli-<os>-<arch>[.exe]` + `SHA256SUMS`) and `npm-publish.yml` (release published → publish `@qmahyar/telegram-cli`; needs the `NPM_TOKEN` repo secret).
+- Before tagging: confirm main is green (CI runs build/vet/test/lint), then verify after: `gh release view vX.Y.Z` and `npm view @qmahyar/telegram-cli version`.
+- If asked "how do we release?" without a version in hand: recall first (`telegram-cli recall "how to release telegram-cli" --agent`), then propose `git tag v<next> && git push origin v<next>`.
+- Rollback: `npm unpublish` (within 72h), `gh release delete`, delete the tag. Never unpublish a long-lived release.

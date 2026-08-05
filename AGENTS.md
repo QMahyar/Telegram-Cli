@@ -76,3 +76,7 @@ For install, auth, examples, and longer product guidance, read `README.md` and `
 ## Local Customizations
 
 Parts of this tree are generated output; ad-hoc hand-edits don't survive a full regeneration. If you modify generated code, keep the edits narrow and document them so a regen carries the intent forward instead of silently dropping it.
+
+## Releasing
+
+`RELEASING.md` is the single source of truth for shipping a version. The short form: the git tag IS the version, `git push origin vX.Y.Z` is the release, and two permanent workflows do the rest — `release.yml` (tag → GitHub Release with the binary matrix from `scripts/dist.sh`) and `npm-publish.yml` (release published → publish `@qmahyar/telegram-cli` to npm). Recall it first: `telegram-cli recall "how to release telegram-cli" --agent`; verify with `gh release view` + `npm view` after every release.

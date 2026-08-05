@@ -7,4 +7,10 @@ telegram-cli.exe
 .env
 !.env.example
 
+# build + npm artifacts
+bin/
+dist/
+vendor/
+*.tgz
+
 export/

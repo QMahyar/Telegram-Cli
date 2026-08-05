@@ -1,0 +1,45 @@
+name: release
+
+# Fired by `git push origin v<semver>` (see RELEASING.md — the tag IS the
+# version; there is no separate version bump). Builds the binary matrix for
+# every platform and attaches it to a GitHub Release. Publishing the npm
+# package is a separate workflow (npm-publish.yml) that runs on the
+# "release: published" event, so the two pipelines stay independently
+# re-runnable and neither blocks the other.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build dist matrix
+        run: bash scripts/dist.sh "$GITHUB_REF_NAME"
+        shell: bash
+
+      - name: Attach to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+
+      - name: Report
+        run: |
+          echo "Release $GITHUB_REF_NAME assets:"
+          ls -1 dist
+          echo "npm publish runs automatically via npm-publish.yml (release: published)."
