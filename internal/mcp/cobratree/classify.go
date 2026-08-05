@@ -17,7 +17,7 @@ const (
 	// causes the runtime walker to register the resulting MCP tool with
 	// readOnlyHint=true. Use for novel CLI commands that don't mutate
 	// external state — read-only API queries, local cache reads, etc.
-	// Without it, hosts like Claude Desktop default to "could write or
+	// Without it, MCP hosts default to "could write or
 	// delete" and demand permission per call.
 	ReadOnlyAnnotation = "mcp:read-only"
 	// LocalWriteAnnotation, when set on a Cobra command to "true"/"1"/"yes",

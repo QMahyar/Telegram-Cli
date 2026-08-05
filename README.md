@@ -49,28 +49,23 @@ or download a pre-built binary for your platform from [GitHub Releases](https://
 
 The `telegram-cli` agent skill lives in this repository's `SKILL.md`. Point your agent at it directly, or install it with the [`skills`](https://github.com/vercel-labs/skills) CLI (Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot, and other supported agents).
 
-## Use with Claude Desktop
+## MCP Server
 
-This CLI ships an MCP server (`telegram-mcp`) that works with Claude Desktop either via a packaged [MCPB](https://github.com/modelcontextprotocol/mcpb) bundle or manual JSON config.
+`telegram-mcp` is a standard MCP server exposing Telegram operations as tools. Any MCP-compatible agent can connect.
 
-To install:
-
-1. Download the `.mcpb` bundle for your platform from [GitHub Releases](https://github.com/QMahyar/Telegram-Cli/releases).
-2. Double-click the `.mcpb` file. Claude Desktop opens and walks you through the install.
-
-Requires Claude Desktop 1.0.0 or later. Pre-built bundles ship for macOS Apple Silicon (`darwin-arm64`) and Windows (`amd64`, `arm64`); for other platforms, use the manual config below.
-
-<details>
-<summary>Manual JSON config (advanced)</summary>
-
-If you can't use the MCPB bundle (older Claude Desktop, unsupported platform), install the MCP binary and configure it manually.
-
+### Install
 
 ```bash
-go build -o bin/telegram-mcp ./cmd/telegram-mcp
+# From source
+ go build -o bin/telegram-mcp ./cmd/telegram-mcp
+
+# Or via npm (downloads platform binary from GitHub Releases)
+npm install -g @qmahyar/telegram-cli
 ```
 
-Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+### Configure
+
+Add to your agent's MCP config (file location varies by agent):
 
 ```json
 {
@@ -82,7 +77,39 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 }
 ```
 
-</details>
+For remote or container-hosted agents, use streamable HTTP:
+
+```json
+{
+  "mcpServers": {
+    "telegram": {
+      "command": "telegram-mcp",
+      "args": ["--transport", "http", "--addr", ":7777"]
+    }
+  }
+}
+```
+
+Set `TELEGRAM_MCP_TRANSPORT` to override the default transport without a flag.
+
+### Tool catalog
+
+| Tool | Description | Annotations |
+|------|-------------|-------------|
+| `context` | API domain context: taxonomy, auth, query tips. Call first. | read-only |
+| `sql` | Read-only SQL on local synced data | read-only |
+| `pre_flight_before_any_batch_run` | Verify accounts are healthy before fan-out | read-only |
+| CLI mirror | Runtime mirror of user-facing CLI commands (broadcast, inbox, batch, etc.) | varies |
+
+The CLI mirror tools shell out to the companion `telegram-cli` binary. Use `telegram-cli which "<task>"` to discover available commands.
+
+### Security notes
+
+- **Stdio transport** (default): zero network surface, zero auth needed — the host owns the process
+- **HTTP transport**: add auth (OAuth 2.1 or API keys) in front for any internet-reachable deployment
+- Never expose an HTTP MCP server to the public internet without authentication
+- The `sql` tool is gated to read-only queries (SELECT/WITH only); multi-statement and write attempts are rejected
+- Sessions are stored with restrictive file permissions; never commit or share session files
 
 ## Authentication
 
