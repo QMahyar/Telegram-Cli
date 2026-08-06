@@ -21,21 +21,74 @@ type whichEntry struct {
 	WhyItMatters string `json:"why_it_matters,omitempty"`
 }
 
-// whichIndex is the curated list of capabilities this CLI advertises as
-// its hero features. Endpoint-level commands are discoverable via
-// `--help`; `which` exists to resolve a natural-language capability
-// query to one of the commands the skill says matter most.
+// whichIndex is the curated capability index: one entry per friendly command
+// (plus subcommand variants for the families agents actually ask about).
+// `which` resolves a natural-language capability query to the best match;
+// the index is static and hand-curated so every returned command exists.
 var whichIndex = []whichEntry{
+	// Cross-account orchestration
 	{Command: "broadcast", Description: "Post one message to dozens of chats spread across all your Telegram accounts in a single command, paced so no account trips flood control.", Group: "Cross-account orchestration", WhyItMatters: "When an agent must deliver the same announcement to many chats across several accounts safely, this is the only one-shot path that handles pacing, retries, and failure reporting."},
-	{Command: "accounts health", Description: "See every account's auth state, active flood cooldowns, unread totals, and session freshness in one table before you run anything risky.", Group: "Fleet awareness", WhyItMatters: "Before any batch operation, an agent should verify which accounts are healthy and which are cooling down; this returns that in one structured call."},
-	{Command: "inbox", Description: "One unread view across every Telegram account you own, ranked by urgency, instead of opening each account separately.", Group: "Fleet awareness", WhyItMatters: "For triage across a fleet of accounts, one call replaces N session logins and manual comparison."},
-	{Command: "batch", Description: "Fan out forward, media download, mark-read, or raw MTProto method calls across accounts and chats as one resumable, audited job — optionally at a scheduled time.", Group: "Cross-account orchestration", WhyItMatters: "When bulk-downloading or bulk-forwarding across several accounts, the job survives interruptions and reports exactly what succeeded per account."},
-	{Command: "jobs", Description: "Queue any broadcast or batch operation for a future time; jobs persist across restarts and fire via the scheduler loop or one-shot OS tasks.", Group: "Cross-account orchestration", WhyItMatters: "When an agent must time posts or batch runs without keeping a terminal open, this is the safe, inspectable queue — 'jobs list' shows pending work, 'jobs cancel' aborts it."},
-	{Command: "daemon run", Description: "Run a bounded multi-account daemon: hold live sessions, collect updates into the mirror, fire due scheduled jobs, and exit with a structured report of everything observed.", Group: "Fleet awareness", WhyItMatters: "When an agent needs live Telegram activity for a bounded window — collect for 10 minutes, then report — this returns counts, notable events, and fired jobs in one structured envelope."},
-	{Command: "stats", Description: "Top senders, messages per day, and per-chat volume computed over your whole synced Telegram history, across accounts.", Group: "Local mirror intelligence", WhyItMatters: "For archive analysis and community health checks, this answers questions the Telegram API itself cannot aggregate."},
-	{Command: "schema check", Description: "Instantly see which Telegram TL layer this CLI speaks, how many methods it exposes, and whether Telegram has shipped a newer layer.", Group: "Schema-driven extensibility", WhyItMatters: "Before relying on a new Telegram feature, an agent can verify the installed CLI actually supports the required layer."},
+	{Command: "batch forward", Description: "Fan out forwarding of message ids to many target chats as one resumable, audited job with pacing.", Group: "Cross-account orchestration", WhyItMatters: "Bulk-forwarding across several accounts without tripping flood control; the job survives interruptions."},
+	{Command: "jobs", Description: "Queue broadcast or batch operations for a future time; jobs persist across restarts.", Group: "Cross-account orchestration", WhyItMatters: "Timing posts or batch runs without keeping a terminal open."},
+	{Command: "daemon run", Description: "Run a bounded multi-account daemon: hold live sessions, collect updates into the mirror, fire due scheduled jobs, and exit with a structured report.", Group: "Fleet awareness", WhyItMatters: "Live Telegram activity for a bounded window, then a structured report."},
+	{Command: "accounts health", Description: "See every account's auth state, active flood cooldowns, unread totals, and session freshness in one table; --probe dials each account live.", Group: "Fleet awareness", WhyItMatters: "Before any batch operation, verify which accounts are healthy and which are cooling down."},
+	{Command: "accounts list", Description: "List every configured account with its user id, username, phone, and verification status.", Group: "Fleet awareness", WhyItMatters: "See the fleet: which aliases exist, which are still unverified after add."},
+	{Command: "accounts add", Description: "Add a new Telegram account with phone + code login or QR scan, then backfill its identity.", Group: "Fleet awareness", WhyItMatters: "Onboarding a new account into the fleet."},
+	{Command: "accounts use", Description: "Set an account as the default for subsequent commands (mark it last-used).", Group: "Fleet awareness", WhyItMatters: "Convenience default for single-account workflows; multi-account agents must pass --account."},
+	{Command: "accounts remove", Description: "Remove an account: logs out, deletes the session directory and the registry row.", Group: "Fleet awareness", WhyItMatters: "Decommissioning an account cleanly."},
+	{Command: "accounts status", Description: "Show the auth status (authorized / user identity) of one account.", Group: "Fleet awareness", WhyItMatters: "Quick single-account auth check."},
+	{Command: "inbox", Description: "One unread view across every Telegram account you own, ranked by urgency, instead of opening each account separately.", Group: "Fleet awareness", WhyItMatters: "For triage across a fleet of accounts, one call replaces N session logins."},
 	{Command: "since", Description: "Everything new across all your accounts since a point in time, grouped by account and chat.", Group: "Fleet awareness", WhyItMatters: "For shift handoffs or morning catch-up, one call replaces scrolling every account."},
-	{Command: "digest", Description: "A mechanical weekly digest of your Telegram activity: volume per account and chat, busiest hours, top terms.", Group: "Local mirror intelligence", WhyItMatters: "For weekly reviews, gives agents a compact structured summary without any LLM dependency."},
+
+	// Read: chats, messages, search, contacts
+	{Command: "chats", Description: "List and inspect Telegram chats (dialogs): titles, unread counts, pinned state.", Group: "Read Telegram data", WhyItMatters: "What conversations exist for an account?"},
+	{Command: "chats leave", Description: "Leave a group or channel (messages.deleteChatUser / channels.leaveChannel).", Group: "Chat lifecycle", WhyItMatters: "Exit a conversation without destroying it."},
+	{Command: "chats delete", Description: "Delete a group or channel you own — irreversible, requires --yes.", Group: "Chat lifecycle", WhyItMatters: "Destroy a conversation permanently."},
+	{Command: "search", Description: "Search messages across all chats; filter by chat, date range (--since/--until), and type.", Group: "Read Telegram data", WhyItMatters: "Find a message anywhere across the fleet."},
+	{Command: "messages", Description: "Show message history for a chat with paging and date filters (--offset, --since, --until).", Group: "Read Telegram data", WhyItMatters: "Read a conversation thread."},
+	{Command: "contacts", Description: "List or search your Telegram contacts.", Group: "Read Telegram data", WhyItMatters: "Who is in the address book?"},
+	{Command: "contacts add", Description: "Add a user to your contacts (contacts.addContact) with optional first/last name.", Group: "Contact management", WhyItMatters: "Build the address book programmatically."},
+	{Command: "contacts remove", Description: "Remove users from your contacts (contacts.deleteContacts), gated by --yes.", Group: "Contact management", WhyItMatters: "Clean the address book."},
+	{Command: "contacts info", Description: "Show a full user profile: about, common chats, blocked status, premium.", Group: "Read Telegram data", WhyItMatters: "Full profile without opening the app."},
+	{Command: "blocked", Description: "List users you have blocked (contacts.getBlocked).", Group: "Contact management", WhyItMatters: "Review the block list."},
+	{Command: "block", Description: "Block users (contacts.block).", Group: "Contact management", WhyItMatters: "Stop spam and harassment."},
+	{Command: "unblock", Description: "Unblock users (contacts.unblock).", Group: "Contact management", WhyItMatters: "Restore access after blocking."},
+	{Command: "topics", Description: "List forum topics for a chat.", Group: "Read Telegram data", WhyItMatters: "Browse forum-style groups."},
+	{Command: "templates", Description: "Add, show, or remove reusable message templates for broadcasts.", Group: "Read Telegram data", WhyItMatters: "Reusable text for repeated posts."},
+
+	// Write: send / forward / delete / read / react / edit / media
+	{Command: "send", Description: "Send a text message (or media with --media) to a chat; supports --reply-to and scheduled --at.", Group: "Send messages", WhyItMatters: "The core outbound capability."},
+	{Command: "forward", Description: "Forward messages from one chat to another.", Group: "Send messages", WhyItMatters: "Move content between chats."},
+	{Command: "delete", Description: "Delete messages from a chat (optionally --revoke for all participants), gated by --yes.", Group: "Send messages", WhyItMatters: "Remove content you sent."},
+	{Command: "read", Description: "Mark all messages in a chat as read.", Group: "Send messages", WhyItMatters: "Zero the unread counter."},
+	{Command: "react", Description: "Send an emoji reaction to a message.", Group: "Send messages", WhyItMatters: "Lightweight engagement."},
+	{Command: "edit", Description: "Edit a message you already sent.", Group: "Send messages", WhyItMatters: "Fix a typo post-send."},
+	{Command: "media", Description: "Download media attached to a message.", Group: "Send messages", WhyItMatters: "Pull attachments to disk."},
+
+	// Sync / mirror / analytics
+	{Command: "sync", Description: "Sync dialogs and peers into the local mirror; pass a chat to also pull its message history.", Group: "Local mirror intelligence", WhyItMatters: "Populate the offline mirror that sql/stats/digest read."},
+	{Command: "export", Description: "Export synced messages as JSONL.", Group: "Local mirror intelligence", WhyItMatters: "Archive or migrate data."},
+	{Command: "sql", Description: "Run read-only SQL against the local mirror database (tg_messages, tg_dialogs, tg_peers).", Group: "Local mirror intelligence", WhyItMatters: "Ad-hoc analysis over synced history."},
+	{Command: "stats", Description: "Message volume statistics computed over your synced history.", Group: "Local mirror intelligence", WhyItMatters: "Community health and archive analysis."},
+	{Command: "digest", Description: "A mechanical digest of your Telegram activity: volume per account and chat, busiest hours, top terms.", Group: "Local mirror intelligence", WhyItMatters: "Weekly review without an LLM."},
+	{Command: "watch", Description: "Watch a chat for new messages for a bounded window and report them.", Group: "Fleet awareness", WhyItMatters: "Live monitoring without a daemon."},
+
+	// Gateway / schema
+	{Command: "raw", Description: "Invoke raw MTProto methods with JSON params (the escape hatch for anything not covered).", Group: "Schema-driven extensibility", WhyItMatters: "Anything the friendly surface lacks."},
+	{Command: "schema check", Description: "Instantly see which Telegram TL layer this CLI speaks and whether Telegram shipped a newer one.", Group: "Schema-driven extensibility", WhyItMatters: "Verify layer support before relying on a new feature."},
+	{Command: "api", Description: "Show the friendly endpoint mirrors available for scripted access.", Group: "Schema-driven extensibility", WhyItMatters: "Discover the mirror surface."},
+	{Command: "capabilities", Description: "List every top-level command with its purpose.", Group: "Discovery", WhyItMatters: "Broad capability discovery."},
+	{Command: "doctor", Description: "Check CLI health: config, Telegram app credentials, sessions, API reachability.", Group: "Discovery", WhyItMatters: "Diagnose why commands fail."},
+	{Command: "which", Description: "Resolve a natural-language capability query to the best matching command.", Group: "Discovery", WhyItMatters: "Ask what command implements an intent."},
+	{Command: "agent-context", Description: "Dump a schema-versioned inventory of every command, flag, and annotation for agents.", Group: "Discovery", WhyItMatters: "Introspect the CLI without parsing help text."},
+	{Command: "config", Description: "Show or set CLI configuration values.", Group: "Discovery", WhyItMatters: "Manage credentials and options."},
+	{Command: "audit", Description: "Read the local run receipt / audit trail.", Group: "Discovery", WhyItMatters: "See what ran and when."},
+	{Command: "feedback", Description: "Read or send feedback about this CLI.", Group: "Discovery", WhyItMatters: "Report issues."},
+
+	// Learning loop
+	{Command: "recall", Description: "Search the self-learned capability store for previously taught answers.", Group: "Self-learning loop", WhyItMatters: "Reuse what was taught before."},
+	{Command: "teach", Description: "Teach the CLI a query → resource mapping so recall finds it later.", Group: "Self-learning loop", WhyItMatters: "Grow the local knowledge base."},
+	{Command: "learnings", Description: "Inspect taught rows, candidates, and loop metrics.", Group: "Self-learning loop", WhyItMatters: "Audit what the loop has learned."},
 }
 
 // whichMatch pairs an index entry with its ranking score for a query.
@@ -183,20 +236,36 @@ func whichScoreEntry(e whichEntry, query string, qTokens []string) int {
 	// Read-intent default: penalize write-verb commands when the request never
 	// asked for a write, so neutral asks can never rank a destructive command
 	// first on a tie.
-	if score > 0 {
-		queryWrite := false
-		for _, qt := range qTokens {
-			if whichWriteVerbs[qt] {
-				queryWrite = true
-				break
-			}
+	queryWrite := false
+	for _, qt := range qTokens {
+		if whichWriteVerbs[qt] {
+			queryWrite = true
+			break
 		}
+	}
+	if score > 0 {
 		if !queryWrite {
 			for _, ct := range cmdTokens {
 				if whichWriteVerbs[ct] {
 					score -= 2
 					break
 				}
+			}
+		}
+		// Write-intent mirror: when the request explicitly asked for a write
+		// ("send a message", "block a user"), read-only commands carrying the
+		// same noun must not win a tie against the write command — the asker's
+		// verb is the intent, not the noun.
+		if queryWrite {
+			readOnly := true
+			for _, ct := range cmdTokens {
+				if whichWriteVerbs[ct] {
+					readOnly = false
+					break
+				}
+			}
+			if readOnly {
+				score -= 2
 			}
 		}
 	}
@@ -264,6 +333,29 @@ var whichWriteVerbs = map[string]bool{
 
 var whichTokenAliases = map[string]string{
 	"repo": "repository", "repos": "repository", "repository": "repository", "repositories": "repository",
+	// Telegram capability aliases: one canonical form per intent family so
+	// natural-language requests resolve to the same command regardless of
+	// the noun the asker used.
+	"contact": "contacts", "contacts": "contacts", "people": "contacts", "person": "contacts",
+	"chat": "chats", "chats": "chats", "dialog": "chats", "dialogs": "chats", "conversation": "chats",
+	"user": "user", "users": "user", "username": "user", "profile": "user",
+	"message": "messages", "messages": "messages", "history": "messages", "thread": "messages",
+	"unread": "inbox", "inbox": "inbox",
+	"block": "block", "ban": "block",
+	"blocked": "blocked",
+	"unblock": "unblock",
+	"reply":   "send", "schedule": "send", "post": "send", "message-send": "send",
+	"sync": "sync", "mirror": "sync",
+	"search": "search", "find": "search", "lookup": "search", "filter": "search", "date": "search",
+	"stats": "stats", "statistics": "stats", "analytics": "stats",
+	"digest": "digest", "summary": "digest",
+	"export": "export", "backup": "export",
+	"delete": "delete", "remove": "delete",
+	"react": "react", "reaction": "react",
+	"edit": "edit", "modify": "edit",
+	"pin": "pin", "pinned": "pin",
+	"leave": "leave", "exit": "leave",
+	"media": "media", "download": "media", "attachment": "media",
 }
 
 func whichSingular(s string) string {

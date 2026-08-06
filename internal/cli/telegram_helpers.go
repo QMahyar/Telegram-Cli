@@ -70,6 +70,34 @@ func parseTelegramFlags(cmd *cobra.Command) telegramCmdFlags {
 	return f
 }
 
+// accountWhere translates an --accounts flag value into a SQL fragment and
+// args. "" or "all" means fleet-wide (mirror analytics span all accounts by
+// default); a single alias filters to that account; comma lists are rejected.
+func accountWhere(spec string) (string, []any, error) {
+	spec = strings.TrimSpace(spec)
+	if spec == "" || spec == "all" {
+		return "", nil, nil
+	}
+	if strings.Contains(spec, ",") {
+		return "", nil, usageErr(fmt.Errorf("--accounts accepts 'all' or a single alias (got %q)", spec))
+	}
+	return " AND account = ?", []any{spec}, nil
+}
+
+// warnMirrorEmpty prints a stderr hint when the mirror has no tg_messages yet,
+// so analytics commands (stats/digest/since/inbox/sql) don't silently return []
+// on an unpopulated mirror. Agent/quiet consumers get a JSON-safe stderr silence.
+func warnMirrorEmpty(ctx context.Context, cmd *cobra.Command, db *sql.DB, f *telegramCmdFlags) {
+	if f.Agent || f.Quiet {
+		return
+	}
+	var n int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM tg_messages`).Scan(&n); err != nil || n > 0 {
+		return
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(), "notice: mirror is empty (0 messages) — run `telegram-cli sync --messages` or `telegram-cli sync <chat>` to populate it\n")
+}
+
 // liveResolver builds a PeerResolver whose @username lookups fall back to the
 // live session (contacts.resolveUsername) on cache miss, and persist the
 // resolved access hash for future offline lookups. Call it inside DialAndRun.
@@ -105,17 +133,37 @@ func openStoreAtPath(ctx context.Context, dbPath string) (*store.Store, error) {
 	return s, nil
 }
 
-// resolveAccount resolves the account alias from flag or finds the last-used account.
+// resolveAccount resolves the account alias from the --account flag, or — when
+// exactly one active account exists — that account. It never silently guesses
+// on a fleet: with multiple active accounts and no flag, it fails loud with
+// exit 6 (confirmationErr) so a wrong-account send is impossible. Callers pass
+// the parsed -a/--account flag value (usually f.Account from
+// parseTelegramFlags); an empty string means "no explicit choice".
 func resolveAccount(ctx context.Context, s *store.Store, flag string) (string, error) {
 	if flag != "" {
 		return flag, nil
+	}
+	var count int
+	if err := s.DB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM tg_accounts WHERE status = 'active'`,
+	).Scan(&count); err != nil {
+		return "", fmt.Errorf("reading accounts: %w", err)
+	}
+	if count == 0 {
+		return "", fmt.Errorf("no active accounts — use --account or run: accounts add")
+	}
+	if count > 1 {
+		return "", confirmationErr(
+			fmt.Errorf("multiple active accounts (%d) — specify --account to avoid acting on the wrong one", count),
+			"re-run with --account <alias> (see 'accounts list')",
+		)
 	}
 	var alias string
 	err := s.DB().QueryRowContext(ctx,
 		`SELECT alias FROM tg_accounts WHERE status = 'active' ORDER BY last_used_at DESC LIMIT 1`,
 	).Scan(&alias)
 	if err != nil {
-		return "", fmt.Errorf("no account specified and no active accounts — use --account or run: accounts add")
+		return "", fmt.Errorf("no active accounts — use --account or run: accounts add")
 	}
 	return alias, nil
 }

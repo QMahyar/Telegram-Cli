@@ -68,6 +68,8 @@ func newAccountsAddCmd(flags *rootFlags) *cobra.Command {
 				return fmt.Errorf("create session dir: %w", err)
 			}
 			ctx := cmd.Context()
+			var authedUser *tg.User
+			var nearestDC int
 			if useQR {
 				if flags.noInput {
 					return usageErr(fmt.Errorf("QR login requires a human to scan the code; --no-input cannot complete it"))
@@ -75,10 +77,25 @@ func newAccountsAddCmd(flags *rootFlags) *cobra.Command {
 				fmt.Fprintf(os.Stderr, "Scan the QR code with your Telegram app (Settings → Devices → Link Desktop Device)...\n")
 				dispatcher := tg.NewUpdateDispatcher()
 				err = mgr.DialAndRunUncheckedWithUpdates(ctx, alias, dispatcher, func(ctx context.Context, client *telegram.Client, api *tg.Client) error {
-					return mtproto.LoginQR(ctx, client, dispatcher, func(ctx context.Context, url string) error {
+					if err := mtproto.LoginQR(ctx, client, dispatcher, func(ctx context.Context, url string) error {
 						fmt.Fprintf(os.Stderr, "Scan this QR code: %s\n", url)
 						return nil
-					})
+					}); err != nil {
+						return err
+					}
+					// Backfill the account row with the authed user's identity so
+					// `accounts list` never shows a stale user_id 0 / empty
+					// username "active" row (P0-2).
+					st, err := mtproto.Status(ctx, client)
+					if err != nil {
+						return fmt.Errorf("fetch authed user: %w", err)
+					}
+					authedUser = st.User
+					dc, err := api.HelpGetNearestDC(ctx)
+					if err == nil {
+						nearestDC = dc.ThisDC
+					}
+					return nil
 				})
 				if err != nil {
 					return fmt.Errorf("QR login failed: %w", err)
@@ -115,7 +132,20 @@ func newAccountsAddCmd(flags *rootFlags) *cobra.Command {
 						}
 						return strings.TrimSpace(pwd), nil
 					}
-					return mtproto.LoginPhone(ctx, client, phone, codeFn, pwdFn)
+					if err := mtproto.LoginPhone(ctx, client, phone, codeFn, pwdFn); err != nil {
+						return err
+					}
+					// Backfill identity (P0-2), same as the QR path.
+					st, err := mtproto.Status(ctx, client)
+					if err != nil {
+						return fmt.Errorf("fetch authed user: %w", err)
+					}
+					authedUser = st.User
+					dc, err := api.HelpGetNearestDC(ctx)
+					if err == nil {
+						nearestDC = dc.ThisDC
+					}
+					return nil
 				})
 				if err != nil {
 					return fmt.Errorf("login failed: %w", err)
@@ -132,6 +162,16 @@ func newAccountsAddCmd(flags *rootFlags) *cobra.Command {
 			)
 			if err != nil {
 				return fmt.Errorf("save account: %w", err)
+			}
+			// Backfill the authed user's identity so `accounts list`/`health`
+			// show real user_id/username instead of a stale "active" placeholder.
+			if authedUser != nil {
+				if _, err := s.DB().ExecContext(ctx,
+					`UPDATE tg_accounts SET user_id = ?, username = ?, first_name = ?, dc_id = ? WHERE alias = ?`,
+					authedUser.ID, authedUser.Username, authedUser.FirstName, nearestDC, alias,
+				); err != nil {
+					return fmt.Errorf("backfill account identity: %w", err)
+				}
 			}
 			// Machine-readable success on stdout; human prose on stderr only.
 			f := parseTelegramFlags(cmd)
@@ -178,6 +218,12 @@ func newAccountsListCmd(flags *rootFlags) *cobra.Command {
 				var a AccountInfo
 				if err := rows.Scan(&a.Alias, &a.UserID, &a.Username, &a.Phone, &a.Status); err != nil {
 					return err
+				}
+				// A row created at `accounts add` time (before login completed)
+				// carries user_id 0 — never report it as a healthy "active"
+				// account (P0-2).
+				if a.UserID == 0 {
+					a.Status = "unverified"
 				}
 				accounts = append(accounts, a)
 			}
@@ -324,11 +370,12 @@ func newAccountsStatusCmd(flags *rootFlags) *cobra.Command {
 				return err
 			}
 			defer s.DB().Close()
+			f := parseTelegramFlags(cmd)
 			alias := ""
 			if len(args) > 0 {
 				alias = args[0]
 			} else {
-				alias, err = resolveAccount(ctx, s, "")
+				alias, err = resolveAccount(ctx, s, f.Account)
 				if err != nil {
 					return err
 				}
@@ -358,7 +405,6 @@ func newAccountsStatusCmd(flags *rootFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			f := parseTelegramFlags(cmd)
 			return outResult(stdout(), f, result)
 		},
 	}
@@ -367,10 +413,14 @@ func newAccountsStatusCmd(flags *rootFlags) *cobra.Command {
 }
 
 func newAccountsHealthCmd(flags *rootFlags) *cobra.Command {
+	var probe bool
 	cmd := &cobra.Command{
 		Use:         "health",
 		Short:       "Show health of all accounts: auth state, cooldowns, unread counts",
 		Annotations: map[string]string{"mcp:read-only": "true"},
+		Example: `  telegram-cli accounts health
+  telegram-cli accounts health --probe      # dial every account live to verify auth
+  telegram-cli accounts health --probe --json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			home, err := config.HomeDir(flags.homePath)
 			if err != nil {
@@ -390,13 +440,19 @@ func newAccountsHealthCmd(flags *rootFlags) *cobra.Command {
 			}
 			defer rows.Close()
 			type healthItem struct {
-				Alias       string `json:"alias"`
-				UserID      int64  `json:"user_id"`
-				Username    string `json:"username"`
-				Phone       string `json:"phone"`
-				Status      string `json:"status"`
-				UnreadTotal int    `json:"unread_total"`
-				Cooldown    string `json:"cooldown,omitempty"`
+				Alias           string `json:"alias"`
+				UserID          int64  `json:"user_id"`
+				Username        string `json:"username"`
+				Phone           string `json:"phone"`
+				Status          string `json:"status"`
+				UnreadTotal     int    `json:"unread_total"`
+				Cooldown        string `json:"cooldown,omitempty"`
+				CooldownSeconds int    `json:"cooldown_seconds,omitempty"`
+				CooldownKind    string `json:"cooldown_kind,omitempty"`
+				SessionFresh    string `json:"session_fresh,omitempty"`
+				SessionAge      string `json:"session_age,omitempty"`
+				Probe           string `json:"probe,omitempty"`
+				ProbeAuthorized bool   `json:"probe_authorized,omitempty"`
 			}
 			var items []healthItem
 			for rows.Next() {
@@ -404,32 +460,73 @@ func newAccountsHealthCmd(flags *rootFlags) *cobra.Command {
 				if err := rows.Scan(&h.Alias, &h.UserID, &h.Username, &h.Phone, &h.Status); err != nil {
 					return err
 				}
+				if h.UserID == 0 {
+					h.Status = "unverified"
+				}
 				if err := s.DB().QueryRowContext(ctx,
 					`SELECT COALESCE(SUM(unread_count), 0) FROM tg_dialogs WHERE account = ?`, h.Alias,
 				).Scan(&h.UnreadTotal); err != nil {
 					return fmt.Errorf("reading unread total for %q: %w", h.Alias, err)
 				}
 				var until int64
+				var cooldownSeconds int
+				var cooldownKind string
 				err := s.DB().QueryRowContext(ctx,
-					`SELECT until_unix FROM tg_cooldowns WHERE account = ? AND until_unix > ? ORDER BY until_unix LIMIT 1`,
+					`SELECT until_unix, seconds, kind FROM tg_cooldowns WHERE account = ? AND until_unix > ? ORDER BY until_unix LIMIT 1`,
 					h.Alias, time.Now().Unix(),
-				).Scan(&until)
+				).Scan(&until, &cooldownSeconds, &cooldownKind)
 				if errors.Is(err, sql.ErrNoRows) {
 					h.Cooldown = ""
 				} else if err != nil {
 					return fmt.Errorf("reading cooldown for %q: %w", h.Alias, err)
 				} else {
 					h.Cooldown = time.Unix(until, 0).Format(time.RFC3339)
+					h.CooldownSeconds = cooldownSeconds
+					h.CooldownKind = cooldownKind
+				}
+				// Session freshness: mtime of the session file, when present.
+				if st, err := os.Stat(filepath.Join(home, "sessions", h.Alias, "session.json")); err == nil {
+					h.SessionFresh = st.ModTime().Format(time.RFC3339)
+					h.SessionAge = time.Since(st.ModTime()).Truncate(time.Second).String()
 				}
 				items = append(items, h)
 			}
 			if err := rows.Err(); err != nil {
 				return fmt.Errorf("reading account health: %w", err)
 			}
+			// --probe: dial each account live and verify the session is still
+			// authorized (auth.Status). A revoked/expired session reports
+			// probe=error; a healthy one reports probe_authorized=true.
+			if probe {
+				mgr, err := openManager(home)
+				if err != nil {
+					return err
+				}
+				for i := range items {
+					alias := items[i].Alias
+					probeErr := mgr.DialAndRun(ctx, alias, func(ctx context.Context, client *telegram.Client, api *tg.Client) error {
+						st, err := mtproto.Status(ctx, client)
+						if err != nil {
+							return err
+						}
+						items[i].ProbeAuthorized = st.Authorized
+						if !st.Authorized {
+							return fmt.Errorf("session not authorized")
+						}
+						return nil
+					})
+					if probeErr != nil {
+						items[i].Probe = fmt.Sprintf("error: %v", probeErr)
+					} else {
+						items[i].Probe = "ok"
+					}
+				}
+			}
 			f := parseTelegramFlags(cmd)
 			return outResult(stdout(), f, items)
 		},
 	}
+	cmd.Flags().BoolVar(&probe, "probe", false, "dial each account live to verify the session is still authorized")
 	addTelegramFlags(cmd)
 	return cmd
 }

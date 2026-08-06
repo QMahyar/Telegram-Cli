@@ -3,6 +3,7 @@ package mtproto
 import (
 	"context"
 	"fmt"
+	"math"
 	"math/rand"
 	"strings"
 
@@ -51,27 +52,86 @@ func GetDialogs(ctx context.Context, api *tg.Client, limit int) ([]DialogItem, e
 
 // GetHistory fetches message history for a peer.
 func GetHistory(ctx context.Context, api *tg.Client, peer tg.InputPeerClass, limit int) ([]MessageItem, error) {
+	return GetHistoryWithOptions(ctx, api, peer, HistoryOptions{Limit: limit})
+}
+
+// HistoryOptions carries paging/range filters for GetHistoryWithOptions.
+type HistoryOptions struct {
+	// Limit caps the result set.
+	Limit int
+	// OffsetID pages to messages older than this id (newest-first walk).
+	OffsetID int
+	// MaxID returns only messages with IDs less than this (older window).
+	MaxID int
+	// MinID returns only messages with IDs greater than this (newer window).
+	MinID int
+	// Direction "oldest" jumps to the beginning of history (offset_id=max int);
+	// "newest" (default) starts at the latest messages.
+	Direction string
+}
+
+// GetHistoryWithOptions fetches message history with paging and id windows.
+// Date/from filters are not available on getHistory, so callers with
+// --since/--until/--from should use SearchMessagesWithOptions (peer-scoped
+// search supports min_date/max_date/from_id directly).
+func GetHistoryWithOptions(ctx context.Context, api *tg.Client, peer tg.InputPeerClass, opts HistoryOptions) ([]MessageItem, error) {
+	limit := opts.Limit
 	if limit <= 0 {
 		limit = 30
 	}
-	resp, err := api.MessagesGetHistory(ctx, &tg.MessagesGetHistoryRequest{
-		Peer:  peer,
-		Limit: limit,
-	})
+	offsetID := opts.OffsetID
+	addOffset := 0
+	if strings.EqualFold(opts.Direction, "oldest") && offsetID == 0 {
+		// messages.getHistory walks backward from offset_id; max int lands
+		// at the very beginning of the chat's history.
+		offsetID = math.MaxInt32
+		addOffset = -limit
+	}
+	req := &tg.MessagesGetHistoryRequest{
+		Peer:      peer,
+		OffsetID:  offsetID,
+		AddOffset: addOffset,
+		Limit:     limit,
+		MaxID:     opts.MaxID,
+		MinID:     opts.MinID,
+	}
+	resp, err := api.MessagesGetHistory(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("get history: %w", err)
 	}
 	return extractMessages(resp)
 }
 
+// SendMessageOptions carries optional send parameters: reply threading and
+// scheduling. Zero values disable the feature.
+type SendMessageOptions struct {
+	// ReplyTo is the message id this message replies to (threads the reply).
+	ReplyTo int64
+	// ScheduleAt is the unix timestamp to schedule the message for.
+	ScheduleAt int64
+}
+
 // SendMessage sends a plain text message to a peer.
 func SendMessage(ctx context.Context, api *tg.Client, peer tg.InputPeerClass, text string) (int64, error) {
+	return SendMessageWithOptions(ctx, api, peer, text, SendMessageOptions{})
+}
+
+// SendMessageWithOptions sends a text message with optional reply threading
+// (InputReplyToMessage) and scheduling (schedule_date).
+func SendMessageWithOptions(ctx context.Context, api *tg.Client, peer tg.InputPeerClass, text string, opts SendMessageOptions) (int64, error) {
 	rnd := rand.Int63()
-	resp, err := api.MessagesSendMessage(ctx, &tg.MessagesSendMessageRequest{
+	req := &tg.MessagesSendMessageRequest{
 		Peer:     peer,
 		Message:  text,
 		RandomID: rnd,
-	})
+	}
+	if opts.ScheduleAt > 0 {
+		req.ScheduleDate = int(opts.ScheduleAt)
+	}
+	if opts.ReplyTo > 0 {
+		req.ReplyTo = &tg.InputReplyToMessage{ReplyToMsgID: int(opts.ReplyTo)}
+	}
+	resp, err := api.MessagesSendMessage(ctx, req)
 	if err != nil {
 		return 0, fmt.Errorf("send message: %w", err)
 	}
@@ -136,15 +196,93 @@ func EditMessage(ctx context.Context, api *tg.Client, peer tg.InputPeerClass, ms
 
 // SearchMessages searches for messages across all chats.
 func SearchMessages(ctx context.Context, api *tg.Client, query string, limit int) ([]MessageItem, error) {
+	return SearchMessagesWithOptions(ctx, api, query, SearchOptions{Limit: limit})
+}
+
+// SearchOptions carries the optional scoping for SearchMessagesWithOptions:
+// peer scope, from-user, date range, filter type, and offset paging.
+type SearchOptions struct {
+	// Peer scopes the search to one chat; nil = global search.
+	Peer tg.InputPeerClass
+	// FromID restricts to messages sent by one user; nil = anyone.
+	FromID tg.InputPeerClass
+	// Limit caps the result set.
+	Limit int
+	// OffsetID pages to messages older than this id.
+	OffsetID int
+	// MinDate / MaxDate bound the message date (unix seconds).
+	MinDate int64
+	MaxDate int64
+	// Filter is the TL message filter (photos, video, ...); nil = all.
+	Filter tg.MessagesFilterClass
+}
+
+// MessageFilterForType maps a friendly filter name to the TL constructor.
+func MessageFilterForType(t string) (tg.MessagesFilterClass, error) {
+	switch strings.ToLower(strings.TrimSpace(t)) {
+	case "", "all":
+		return &tg.InputMessagesFilterEmpty{}, nil
+	case "photo", "photos":
+		return &tg.InputMessagesFilterPhotos{}, nil
+	case "video", "videos":
+		return &tg.InputMessagesFilterVideo{}, nil
+	case "document", "file", "files":
+		return &tg.InputMessagesFilterDocument{}, nil
+	case "url", "link", "links":
+		return &tg.InputMessagesFilterURL{}, nil
+	case "gif", "animation":
+		return &tg.InputMessagesFilterGif{}, nil
+	case "voice", "voice-message":
+		return &tg.InputMessagesFilterVoice{}, nil
+	case "music", "audio":
+		return &tg.InputMessagesFilterMusic{}, nil
+	case "sticker", "stickers":
+		return &tg.InputMessagesFilterPhotoVideo{}, nil // stickers are image-based; closest TL filter
+	case "poll", "polls":
+		return &tg.InputMessagesFilterPoll{}, nil
+	case "geo", "location":
+		return &tg.InputMessagesFilterGeo{}, nil
+	case "pinned":
+		return &tg.InputMessagesFilterPinned{}, nil
+	default:
+		return nil, fmt.Errorf("unknown --type %q (valid: photo, video, document, url, gif, voice, music, sticker, poll, geo, pinned)", t)
+	}
+}
+
+// SearchMessagesWithOptions searches messages with peer scope, from-user,
+// date range, filter type, and offset paging.
+func SearchMessagesWithOptions(ctx context.Context, api *tg.Client, query string, opts SearchOptions) ([]MessageItem, error) {
+	limit := opts.Limit
 	if limit <= 0 {
 		limit = 30
 	}
-	resp, err := api.MessagesSearch(ctx, &tg.MessagesSearchRequest{
+	peer := opts.Peer
+	if peer == nil {
+		peer = &tg.InputPeerEmpty{} // global search across all chats
+	}
+	filter := opts.Filter
+	if filter == nil {
+		filter = &tg.InputMessagesFilterEmpty{}
+	}
+	req := &tg.MessagesSearchRequest{
 		Q:      query,
-		Peer:   &tg.InputPeerEmpty{}, // InputPeerEmpty = global search across all chats
-		Filter: &tg.InputMessagesFilterEmpty{},
+		Peer:   peer,
+		Filter: filter,
 		Limit:  limit,
-	})
+	}
+	if opts.OffsetID > 0 {
+		req.OffsetID = int(opts.OffsetID)
+	}
+	if opts.MinDate > 0 {
+		req.MinDate = int(opts.MinDate)
+	}
+	if opts.MaxDate > 0 {
+		req.MaxDate = int(opts.MaxDate)
+	}
+	if opts.FromID != nil {
+		req.SetFromID(opts.FromID)
+	}
+	resp, err := api.MessagesSearch(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("search messages: %w", err)
 	}

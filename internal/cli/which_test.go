@@ -134,3 +134,45 @@ func TestWhichIndex_ExistsAndIsWellFormed(t *testing.T) {
 		}
 	}
 }
+
+// The agent report's acceptance queries (TODO P0-4): each natural-language
+// query must resolve to the capability it describes. Guards against the
+// index regressing to a 10-entry hero-feature-only list.
+func TestRankWhich_AgentReportAcceptanceQueries(t *testing.T) {
+	cases := []struct {
+		query string
+		want  string // prefix of the command path
+	}{
+		{"add a contact", "contacts"},
+		{"block a user", "block"},
+		{"list my chats", "chats"},
+		{"send a message to a chat", "send"},
+		{"search my messages", "search"},
+		{"delete a chat entirely", "chats delete"},
+		{"filter messages by date", "search"},
+		{"who do i have blocked", "blocked"},
+		{"unread messages", "inbox"},
+		{"sync my data", "sync"},
+		{"download media from a message", "media"},
+	}
+	for _, tc := range cases {
+		got := rankWhich(whichIndex, tc.query, 1)
+		if len(got) == 0 {
+			t.Errorf("query %q: expected a match starting with %q, got no match", tc.query, tc.want)
+			continue
+		}
+		cmd := got[0].Entry.Command
+		if !strings.HasPrefix(cmd, tc.want) {
+			t.Errorf("query %q: top match %q does not start with %q", tc.query, cmd, tc.want)
+		}
+	}
+}
+
+// A query that matches nothing specific must return no match (the CLI then
+// exits 2) rather than surfacing generic orchestration entries at score 1.
+func TestRankWhich_NoConfidenceReturnsNothing(t *testing.T) {
+	got := rankWhich(whichIndex, "stale tickets nobody owns", 3)
+	if len(got) != 0 {
+		t.Errorf("expected no match for generic query, got %+v", got)
+	}
+}

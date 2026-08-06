@@ -165,6 +165,10 @@ func newSQLCmd(flags *rootFlags) *cobra.Command {
 			if len(results) == 0 {
 				results = []map[string]any{}
 			}
+			// Only warn for mirror tables; arbitrary sql may target other tables.
+			if strings.Contains(strings.ToLower(query), "tg_messages") {
+				warnMirrorEmpty(ctx, cmd, s.DB(), &f)
+			}
 			return outResult(stdout(), f, results)
 		},
 	}

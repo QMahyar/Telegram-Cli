@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -44,8 +43,8 @@ func RegisterTools(s *server.MCPServer) {
 	// SQL tool — ad-hoc analysis on synced data without API calls
 	s.AddTool(
 		mcplib.NewTool("sql",
-			mcplib.WithDescription("Run read-only SQL against local database. Use for ad-hoc analysis, aggregations, and joins across synced resources. Requires sync first."),
-			mcplib.WithString("query", mcplib.Required(), mcplib.Description("SQL query (SELECT or WITH...SELECT). Synced records live in resources(resource_type, id, data); filter by resource_type and use json_extract on data, e.g. SELECT json_extract(data,'$.name') FROM resources WHERE resource_type='mirror'.")),
+			mcplib.WithDescription("Run read-only SQL against the local Telegram mirror database. Use for ad-hoc analysis, aggregations, and joins across synced Telegram data. Requires sync first."),
+			mcplib.WithString("query", mcplib.Required(), mcplib.Description("SQL query (SELECT or WITH...SELECT only). Tables: tg_messages (account, peer_id, msg_id, sender, text, date), tg_dialogs (account, peer_id, title, unread_count), tg_peers (account, peer_id, username, access_hash), tg_accounts (alias, user_id, username, status), tg_jobs, tg_job_results, tg_templates. Example: SELECT account, count(*) FROM tg_messages GROUP BY account.")),
 			mcplib.WithReadOnlyHintAnnotation(true),
 			mcplib.WithDestructiveHintAnnotation(false),
 		),
@@ -60,7 +59,7 @@ func RegisterTools(s *server.MCPServer) {
 			mcplib.WithReadOnlyHintAnnotation(true),
 			mcplib.WithDestructiveHintAnnotation(false),
 		),
-		handleContext,
+		handleContextWith(s),
 	)
 
 	// Runtime Cobra-tree mirror — exposes every user-facing command that is
@@ -412,11 +411,15 @@ func newMCPClientFromConfig(cfg *config.Config) *client.Client {
 }
 
 func mcpDBPath() (string, error) {
-	dir, err := cliutil.DataDir()
+	// The Telegram mirror lives at <home>/telegram.db (config.DefaultDBPath,
+	// the same path openStore uses). The scaffold's <data>/data.db is a
+	// different database the Telegram CLI never writes to — querying it
+	// returned empty results for every MCP sql call (TODO M2-1).
+	home, err := config.HomeDir("")
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "data.db"), nil
+	return config.DefaultDBPath(home), nil
 }
 
 type mcpStoreStatusKind string
@@ -740,7 +743,7 @@ func mcpSQLEnvelope(rows []map[string]any, columns []string, storeStatus mcpStor
 func mcpSQLQueryError(err error) string {
 	msg := err.Error()
 	if strings.Contains(strings.ToLower(msg), "no such table") {
-		return fmt.Sprintf("query failed: %v. Synced records live in resources(resource_type, id, data), not one SQL table per resource. Filter by resource_type, for example resource_type='mirror', and read JSON fields with json_extract(data,'$.field').", err)
+		return fmt.Sprintf("query failed: %v. The Telegram mirror lives in these tables: tg_messages, tg_dialogs, tg_peers, tg_accounts, tg_jobs, tg_job_results, tg_templates. Run 'telegram-cli sync' to populate them, then query e.g. SELECT account, count(*) FROM tg_messages GROUP BY account.", err)
 	}
 	return fmt.Sprintf("query failed: %v", err)
 }
@@ -755,7 +758,16 @@ func toolResultJSON(v any) (*mcplib.CallToolResult, error) {
 	return mcplib.NewToolResultText(text), nil
 }
 
-func handleContext(_ context.Context, _ mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+// handleContextWith returns the context handler bound to the server so it can
+// report the real registered tool count (TODO M2-2: the old hardcoded 1 was
+// wrong the moment the server registered more than the sql tool).
+func handleContextWith(s *server.MCPServer) func(context.Context, mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	return func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+		return handleContext(ctx, req, s)
+	}
+}
+
+func handleContext(_ context.Context, _ mcplib.CallToolRequest, s *server.MCPServer) (*mcplib.CallToolResult, error) {
 	paths := map[string]string{}
 	if dir, err := cliutil.ConfigDir(); err == nil {
 		paths["config_dir"] = dir
@@ -769,11 +781,17 @@ func handleContext(_ context.Context, _ mcplib.CallToolRequest) (*mcplib.CallToo
 	if dir, err := cliutil.CacheDir(); err == nil {
 		paths["cache_dir"] = dir
 	}
+	toolCount := 0
+	if s != nil {
+		if tools := s.ListTools(); tools != nil {
+			toolCount = len(tools)
+		}
+	}
 	ctx := map[string]any{
 		"api":         "telegram",
 		"description": "Every Telegram account you own in one terminal: unified sync and search, flood-aware cross-account broadcasts, and a schema-driven raw gateway no other Telegram CLI offers.",
 		"archetype":   "generic",
-		"tool_count":  1,
+		"tool_count":  toolCount,
 		"paths":       paths,
 		// tool_surface tells agents which surface a capability lives on.
 		"tool_surface": "MCP exposes typed endpoint tools plus a runtime mirror of user-facing CLI commands. Endpoint tools keep typed schemas; command-mirror tools shell out to the companion telegram-cli binary.",

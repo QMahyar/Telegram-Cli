@@ -37,11 +37,11 @@ func newTopicsCmd(flags *rootFlags) *cobra.Command {
 				return err
 			}
 			defer s.DB().Close()
-			alias, err := resolveAccount(ctx, s, "")
+			f := parseTelegramFlags(cmd)
+			alias, err := resolveAccount(ctx, s, f.Account)
 			if err != nil {
 				return err
 			}
-			f := parseTelegramFlags(cmd)
 			mgr, err := openManager(home)
 			if err != nil {
 				return err

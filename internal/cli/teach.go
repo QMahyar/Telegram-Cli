@@ -206,6 +206,20 @@ Disabling: pass --no-learn or set ` + noLearnEnvVar + `=true.`,
 				writeTeachErrLog(fmt.Sprintf("teach: missing --resource-type for query=%q", query))
 				return silentCodeErr(2)
 			}
+			// Junk-teach gate (TODO P0-5): teaches pointing at repo docs
+			// (resource_type=file → README.md/RELEASING.md/... ) pollute recall
+			// for real Telegram capability questions and erode precision.
+			// The capability surface is commands/accounts/peers/jobs, never
+			// markdown files, so a file teach is always a misfire.
+			if strings.TrimSpace(resourceType) == "file" {
+				for _, rid := range resources {
+					rl := strings.ToLower(strings.TrimSpace(rid))
+					if strings.HasSuffix(rl, ".md") || rl == "readme" || rl == "license" || rl == "notice" || strings.HasSuffix(rl, ".txt") {
+						writeTeachErrLog(fmt.Sprintf("teach: refused doc-file teach (query=%q resource=%q type=file): teach CLI capabilities, not markdown docs", query, rid))
+						return silentCodeErr(2)
+					}
+				}
+			}
 			if strings.TrimSpace(playbookFile) != "" && strings.TrimSpace(playbookJSONInline) != "" {
 				writeTeachErrLog(fmt.Sprintf("teach: --playbook-file and --playbook-json are mutually exclusive (query=%q)", query))
 				return silentCodeErr(2)

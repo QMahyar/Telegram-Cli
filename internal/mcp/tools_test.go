@@ -14,6 +14,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 	"telegram-cli/internal/cliutil"
 	"telegram-cli/internal/cliutil/testenv"
+	"telegram-cli/internal/config"
 	"telegram-cli/internal/mcp/bound"
 	"telegram-cli/internal/store"
 )
@@ -39,11 +40,11 @@ func TestMCPPathResolutionMatchesCLIResolverWithHomeEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mcpDBPath() error = %v", err)
 	}
-	cliDataDir, err := cliutil.DataDir()
+	home, err := config.HomeDir("")
 	if err != nil {
-		t.Fatalf("cliutil.DataDir() error = %v", err)
+		t.Fatalf("config.HomeDir error = %v", err)
 	}
-	if want := filepath.Join(cliDataDir, "data.db"); gotDB != want {
+	if want := config.DefaultDBPath(home); gotDB != want {
 		t.Fatalf("MCP db path = %q, want CLI resolver path %q", gotDB, want)
 	}
 }
@@ -63,7 +64,11 @@ func TestMCPPathResolutionMatchesCLIResolverWithPlatformDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mcpDBPath() error = %v", err)
 	}
-	if want := filepath.Join(home, ".telegram-cli", "data", "data.db"); gotDB != want {
+	resolvedHome, err := config.HomeDir("")
+	if err != nil {
+		t.Fatalf("config.HomeDir error = %v", err)
+	}
+	if want := config.DefaultDBPath(resolvedHome); gotDB != want {
 		t.Fatalf("MCP db path = %q, want %q", gotDB, want)
 	}
 }
@@ -97,7 +102,7 @@ func TestMCPRegisterToolsPreservesTypedSpecialTools(t *testing.T) {
 	if !ok {
 		t.Fatalf("typed sql tool missing from registered tools: %#v", tools)
 	}
-	if !strings.Contains(sqlTool.Tool.Description, "Run read-only SQL against local database") {
+	if !strings.Contains(sqlTool.Tool.Description, "Run read-only SQL against the local Telegram mirror database") {
 		t.Fatalf("sql tool appears to have been overwritten by command mirror: %q", sqlTool.Tool.Description)
 	}
 }
@@ -144,7 +149,7 @@ func TestMCPSQLMissingStoreIsActionable(t *testing.T) {
 		t.Fatalf("handleSQL missing store IsError = %v, want true", result != nil && result.IsError)
 	}
 	text := mcpTextContent(t, result)
-	for _, want := range []string{"No local data store found", "data.db", "Run", "sync"} {
+	for _, want := range []string{"No local data store found", "telegram.db", "Run", "sync"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing-store error %q missing %q", text, want)
 		}
@@ -234,7 +239,7 @@ func TestMCPSQLDomainTableMismatchIsActionable(t *testing.T) {
 		t.Fatalf("handleSQL domain-table mismatch IsError = %v, want true", result != nil && result.IsError)
 	}
 	text := mcpTextContent(t, result)
-	for _, want := range []string{"resources(resource_type, id, data)", "resource_type", "json_extract", "widgets"} {
+	for _, want := range []string{"tg_messages", "tg_dialogs", "tg_peers", "widgets"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("domain-table mismatch error %q missing %q", text, want)
 		}

@@ -11,6 +11,7 @@ import (
 )
 
 func newAPICmd(flags *rootFlags) *cobra.Command {
+	var rawEnum bool
 	cmd := &cobra.Command{
 		Use:         "api [interface]",
 		Short:       "Browse all API endpoints by interface name",
@@ -18,19 +19,25 @@ func newAPICmd(flags *rootFlags) *cobra.Command {
 		Long: `Browse and call any API endpoint using the raw interface names.
 
 The friendly top-level commands cover the most common operations.
-This command provides access to ALL endpoints for power users and
-agents that need full API coverage.
-
-Run 'api' with no arguments to list all interfaces.
-Run 'api <interface>' to see that interface's methods.`,
+This command mirrors the CLI's friendly command surface (accounts, chats,
+contacts, messages, search, sync, templates, topics, ...). For the full
+MTProto method set — every TL endpoint the schema exposes — use
+"raw list", "raw --schema <method>", and "raw <method>".`,
 		Example: `  # List all available interfaces
   telegram-cli api
 
   # Show methods for a specific interface
-  telegram-cli api <interface-name>`,
+  telegram-cli api <interface-name>
+
+  # Enumerate every raw MTProto method (schema-driven gateway)
+  telegram-cli raw list
+  telegram-cli raw --schema messages.getDialogs`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root := cmd.Root()
 
+			if rawEnum {
+				return rawList(cmd, nil, "")
+			}
 			if len(args) > 0 {
 				target := strings.ToLower(args[0])
 				for _, child := range root.Commands() {
@@ -103,6 +110,6 @@ Run 'api <interface>' to see that interface's methods.`,
 			return nil
 		},
 	}
-
+	cmd.Flags().BoolVar(&rawEnum, "raw", false, "enumerate every raw MTProto method (same as raw list)")
 	return cmd
 }

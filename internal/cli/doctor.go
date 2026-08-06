@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -188,6 +190,34 @@ func newDoctorCmd(flags *rootFlags) *cobra.Command {
 				report["base_url"] = cfg.BaseURL
 			}
 
+			// Check Telegram MTProto app credentials — the pair every live
+			// Telegram command needs (send, chats, messages, search, ...).
+			// The generic base_url/auth_header config above is a different
+			// transport; without TELEGRAM_API_ID/HASH the CLI has no path to
+			// Telegram at all, so this is a hard FAIL that exits non-zero even
+			// with the default --fail-on never (P0-1).
+			home, homeErr := config.HomeDir(flags.homePath)
+			if homeErr != nil {
+				report["telegram_api"] = fmt.Sprintf("error resolving home dir: %s", homeErr)
+			} else if _, _, credErr := config.AppCredentials(); credErr != nil {
+				report["telegram_api"] = "missing TELEGRAM_API_ID / TELEGRAM_API_HASH — set both env vars (create at https://my.telegram.org/apps)"
+			} else {
+				sessionDir := filepath.Join(home, "sessions")
+				n := 0
+				if entries, err := os.ReadDir(sessionDir); err == nil {
+					for _, e := range entries {
+						if e.IsDir() {
+							n++
+						}
+					}
+				}
+				if n == 0 {
+					report["telegram_api"] = "credentials present; no sessions yet — add one with: accounts add"
+				} else {
+					report["telegram_api"] = fmt.Sprintf("configured (%d session dir(s) under %s)", n, sessionDir)
+				}
+			}
+
 			// Check auth
 			report["auth"] = "not required"
 
@@ -291,6 +321,7 @@ func newDoctorCmd(flags *rootFlags) *cobra.Command {
 				{"verify_mode", "Verify Mode"},
 				{"paths_warning", "Paths"},
 				{"credentials_location_warning", "Credentials Storage"},
+				{"telegram_api", "Telegram API"},
 				{"api", "API"},
 				{"credentials", "Credentials"},
 			}
@@ -436,9 +467,21 @@ func renderPathsReport(w io.Writer, rep map[string]any) {
 // doctorExitForFailOn returns a non-nil error when the report's worst
 // status meets the --fail-on gate. "error" trips on failing sections, "warn"
 // trips on deliberate WARN sections plus errors, and "stale" trips on cache
-// freshness plus errors. The default empty string means never fail on status.
+// freshness plus errors. The default empty string means never fail on status —
+// EXCEPT for a missing Telegram credential path (telegram_api), which is a
+// hard failure by definition: without TELEGRAM_API_ID/HASH no live Telegram
+// command can run, so doctor must exit non-zero even without --fail-on (P0-1).
 func doctorExitForFailOn(failOn string, report map[string]any) error {
+	telegramBlocked := false
+	if v, ok := report["telegram_api"].(string); ok && strings.Contains(v, "TELEGRAM_API_ID") {
+		// Any error mentioning the credential env vars (missing pair, invalid
+		// api_id, ...) means the CLI has no usable path to Telegram.
+		telegramBlocked = true
+	}
 	if failOn == "" {
+		if telegramBlocked {
+			return fmt.Errorf("doctor: Telegram app credentials missing — set TELEGRAM_API_ID and TELEGRAM_API_HASH")
+		}
 		return nil
 	}
 	worstError := false
