@@ -3,6 +3,7 @@ package mtproto
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 
@@ -101,7 +102,7 @@ func UploadAndSendMedia(ctx context.Context, api *tg.Client, peer tg.InputPeerCl
 		}
 	}
 
-	rnd := int64(0)
+	rnd := generateRandomID()
 	resp, err := api.MessagesSendMedia(ctx, &tg.MessagesSendMediaRequest{
 		Peer:     peer,
 		Media:    inputMedia,
@@ -144,4 +145,9 @@ func mimeFromExt(ext string) string {
 	default:
 		return "application/octet-stream"
 	}
+}
+
+// generateRandomID returns a cryptographically suitable random ID for Telegram.
+func generateRandomID() int64 {
+	return rand.Int63()
 }

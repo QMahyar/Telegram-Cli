@@ -29,3 +29,25 @@ func TestNovelBatchHelpWires(t *testing.T) {
 		}
 	}
 }
+
+func TestBatchCommand_MissingAccount(t *testing.T) {
+	cmd := RootCmd()
+	cmd.SetArgs([]string{"batch", "forward"})
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	err := cmd.Execute()
+	// batch forward shows help when called without args (not an error)
+	if err != nil {
+		t.Errorf("batch forward without args should show help, got error: %v", err)
+	}
+}
+
+func TestBatchCommand_InvalidFlag(t *testing.T) {
+	cmd := RootCmd()
+	cmd.SetArgs([]string{"batch", "forward", "--nonexistent-flag"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Error("expected error for invalid flag")
+	}
+}

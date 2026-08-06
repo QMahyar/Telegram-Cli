@@ -29,3 +29,25 @@ func TestNovelSinceHelpWires(t *testing.T) {
 		}
 	}
 }
+
+func TestSinceCommand_MissingAccount(t *testing.T) {
+	cmd := RootCmd()
+	cmd.SetArgs([]string{"since"})
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	err := cmd.Execute()
+	// since without time-spec shows help (not an error)
+	if err != nil {
+		t.Errorf("since without time-spec should show help, got error: %v", err)
+	}
+}
+
+func TestSinceCommand_InvalidFlag(t *testing.T) {
+	cmd := RootCmd()
+	cmd.SetArgs([]string{"since", "--nonexistent-flag"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Error("expected error for invalid flag")
+	}
+}

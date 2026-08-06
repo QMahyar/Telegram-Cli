@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/gotd/td/session"
 	"github.com/gotd/td/telegram"
@@ -64,6 +65,10 @@ func appCredentials() (int, string, error) {
 
 // SessionDir returns the session storage directory for the given account alias.
 func (m *Manager) SessionDir(alias string) string {
+	// Sanitize alias to prevent path traversal
+	alias = strings.ReplaceAll(alias, "/", "")
+	alias = strings.ReplaceAll(alias, "\\", "")
+	alias = strings.ReplaceAll(alias, "..", "")
 	return filepath.Join(m.Home, "sessions", alias)
 }
 

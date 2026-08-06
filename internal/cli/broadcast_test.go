@@ -29,3 +29,21 @@ func TestNovelBroadcastHelpWires(t *testing.T) {
 		}
 	}
 }
+
+func TestBroadcastCommand_MissingAccount(t *testing.T) {
+	cmd := RootCmd()
+	cmd.SetArgs([]string{"broadcast"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Error("expected error for missing arguments")
+	}
+}
+
+func TestBroadcastCommand_InvalidFlag(t *testing.T) {
+	cmd := RootCmd()
+	cmd.SetArgs([]string{"broadcast", "--nonexistent-flag"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Error("expected error for invalid flag")
+	}
+}

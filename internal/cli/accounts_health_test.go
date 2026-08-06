@@ -29,3 +29,12 @@ func TestNovelAccountsHealthHelpWires(t *testing.T) {
 		}
 	}
 }
+
+func TestAccountsHealthCommand_InvalidFlag(t *testing.T) {
+	cmd := RootCmd()
+	cmd.SetArgs([]string{"accounts", "health", "--nonexistent-flag"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Error("expected error for invalid flag")
+	}
+}

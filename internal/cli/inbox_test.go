@@ -29,3 +29,25 @@ func TestNovelInboxHelpWires(t *testing.T) {
 		}
 	}
 }
+
+func TestInboxCommand_MissingAccount(t *testing.T) {
+	cmd := RootCmd()
+	cmd.SetArgs([]string{"inbox"})
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	err := cmd.Execute()
+	// inbox without account uses last-used account (not an error if accounts exist)
+	if err != nil {
+		t.Errorf("inbox without account should use last-used, got error: %v", err)
+	}
+}
+
+func TestInboxCommand_InvalidFlag(t *testing.T) {
+	cmd := RootCmd()
+	cmd.SetArgs([]string{"inbox", "--nonexistent-flag"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Error("expected error for invalid flag")
+	}
+}

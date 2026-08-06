@@ -242,9 +242,7 @@ func watchMediaType(m *tg.Message) string {
 	case *tg.MessageMediaPhoto:
 		return "photo"
 	case *tg.MessageMediaDocument:
-		if _, ok := m.Media.(*tg.MessageMediaDocument); ok {
-			return "document"
-		}
+		return "document"
 	}
 	return ""
 }

@@ -5,8 +5,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/mark3labs/mcp-go/server"
 	"telegram-cli/internal/cli"
@@ -51,7 +54,12 @@ func main() {
 
 	transport := flag.String("transport", defaultTransport(), "MCP transport: stdio | http")
 	addr := flag.String("addr", defaultHTTPAddr, "bind address for http transport (host:port or :port)")
+	apiKey := flag.String("api-key", "", "API key for HTTP bearer token authentication (required for http transport)")
 	flag.Parse()
+
+	if *apiKey == "" {
+		*apiKey = os.Getenv("TELEGRAM_MCP_API_KEY")
+	}
 
 	switch strings.ToLower(*transport) {
 	case "stdio":
@@ -61,8 +69,19 @@ func main() {
 		}
 	case "http":
 		httpSrv := server.NewStreamableHTTPServer(s)
-		fmt.Fprintf(os.Stderr, "telegram-mcp serving MCP over streamable HTTP at %s\n", *addr)
-		if err := httpSrv.Start(*addr); err != nil {
+
+		var handler http.Handler = httpSrv
+
+		if *apiKey != "" {
+			handler = authMiddleware(handler, *apiKey)
+			handler = rateLimitMiddleware(handler)
+			fmt.Fprintf(os.Stderr, "telegram-mcp serving MCP over streamable HTTP at %s (authenticated)\n", *addr)
+		} else {
+			fmt.Fprintf(os.Stderr, "telegram-mcp serving MCP over streamable HTTP at %s (WARNING: no authentication)\n", *addr)
+			fmt.Fprintf(os.Stderr, "hint: set --api-key or TELEGRAM_MCP_API_KEY for production use\n")
+		}
+
+		if err := http.ListenAndServe(*addr, handler); err != nil {
 			fmt.Fprintf(os.Stderr, "MCP server error: %v\n", err)
 			os.Exit(1)
 		}
@@ -81,4 +100,82 @@ func defaultTransport() string {
 		return t
 	}
 	return "stdio"
+}
+
+// authMiddleware validates Bearer token authentication.
+func authMiddleware(next http.Handler, apiKey string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "missing Authorization header", http.StatusUnauthorized)
+			return
+		}
+
+		const prefix = "Bearer "
+		if !strings.HasPrefix(authHeader, prefix) {
+			http.Error(w, "invalid Authorization header format", http.StatusUnauthorized)
+			return
+		}
+
+		token := strings.TrimPrefix(authHeader, prefix)
+		if token != apiKey {
+			http.Error(w, "invalid API key", http.StatusUnauthorized)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// rateLimitMiddleware implements a simple token bucket rate limiter.
+type rateLimiter struct {
+	mu       sync.Mutex
+	tokens   float64
+	maxTokens float64
+	refillRate float64
+	lastRefill time.Time
+}
+
+func newRateLimiter(maxTokens, refillRate float64) *rateLimiter {
+	return &rateLimiter{
+		tokens:     maxTokens,
+		maxTokens:  maxTokens,
+		refillRate: refillRate,
+		lastRefill: time.Now(),
+	}
+}
+
+func (rl *rateLimiter) allow() bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	now := time.Now()
+	elapsed := now.Sub(rl.lastRefill).Seconds()
+	rl.tokens = min(rl.maxTokens, rl.tokens+elapsed*rl.refillRate)
+	rl.lastRefill = now
+
+	if rl.tokens >= 1 {
+		rl.tokens--
+		return true
+	}
+	return false
+}
+
+func min(a, b float64) float64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// rateLimitMiddleware adds rate limiting to HTTP requests.
+func rateLimitMiddleware(next http.Handler) http.Handler {
+	limiter := newRateLimiter(10, 1) // 10 requests burst, 1 per second sustained
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !limiter.allow() {
+			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

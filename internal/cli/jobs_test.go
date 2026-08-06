@@ -29,3 +29,12 @@ func TestNovelJobsHelpWires(t *testing.T) {
 		}
 	}
 }
+
+func TestJobsCommand_InvalidFlag(t *testing.T) {
+	cmd := RootCmd()
+	cmd.SetArgs([]string{"jobs", "--nonexistent-flag"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Error("expected error for invalid flag")
+	}
+}

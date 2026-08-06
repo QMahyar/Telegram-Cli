@@ -19,6 +19,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// sanitizeAlias removes path separators and other dangerous characters from
+// account aliases to prevent path traversal attacks.
+func sanitizeAlias(alias string) string {
+	alias = strings.ReplaceAll(alias, "/", "")
+	alias = strings.ReplaceAll(alias, "\\", "")
+	alias = strings.ReplaceAll(alias, "..", "")
+	alias = strings.TrimSpace(alias)
+	return alias
+}
+
 func newNovelAccountsCmd(flags *rootFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:         "accounts",
@@ -51,6 +61,10 @@ func newAccountsAddCmd(flags *rootFlags) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if alias == "" {
 				return fmt.Errorf("--alias is required")
+			}
+			alias = sanitizeAlias(alias)
+			if alias == "" {
+				return fmt.Errorf("--alias is empty after sanitization")
 			}
 			if !useQR && phone == "" {
 				return fmt.Errorf("--phone is required (or use --qr to log in by scanning a code)")
@@ -244,7 +258,10 @@ func newAccountsUseCmd(flags *rootFlags) *cobra.Command {
 		Short: "Set an account as the default for subsequent commands",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			alias := args[0]
+			alias := sanitizeAlias(args[0])
+			if alias == "" {
+				return fmt.Errorf("alias is empty after sanitization")
+			}
 			home, err := config.HomeDir(flags.homePath)
 			if err != nil {
 				return err
@@ -279,7 +296,10 @@ func newAccountsRenameCmd(flags *rootFlags) *cobra.Command {
   tele accounts rename personal main`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			oldAlias, newAlias := args[0], args[1]
+			oldAlias, newAlias := sanitizeAlias(args[0]), sanitizeAlias(args[1])
+			if oldAlias == "" || newAlias == "" {
+				return fmt.Errorf("aliases are empty after sanitization")
+			}
 			home, err := config.HomeDir(flags.homePath)
 			if err != nil {
 				return err
@@ -320,7 +340,10 @@ func newAccountsRemoveCmd(flags *rootFlags) *cobra.Command {
 		Short: "Remove an account (logs out and deletes session by default)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			alias := args[0]
+			alias := sanitizeAlias(args[0])
+			if alias == "" {
+				return fmt.Errorf("alias is empty after sanitization")
+			}
 			home, err := config.HomeDir(flags.homePath)
 			if err != nil {
 				return err
@@ -544,6 +567,10 @@ func newAccountsImportCmd(flags *rootFlags) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if alias == "" {
 				return fmt.Errorf("--alias is required")
+			}
+			alias = sanitizeAlias(alias)
+			if alias == "" {
+				return fmt.Errorf("--alias is empty after sanitization")
 			}
 			if sessionStr == "" {
 				return fmt.Errorf("--session is required (the Telethon/Pyrogram hex string)")

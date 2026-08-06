@@ -29,3 +29,12 @@ func TestNovelSchemaCheckHelpWires(t *testing.T) {
 		}
 	}
 }
+
+func TestSchemaCheckCommand_InvalidFlag(t *testing.T) {
+	cmd := RootCmd()
+	cmd.SetArgs([]string{"schema", "check", "--nonexistent-flag"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Error("expected error for invalid flag")
+	}
+}

@@ -29,3 +29,25 @@ func TestNovelDigestHelpWires(t *testing.T) {
 		}
 	}
 }
+
+func TestDigestCommand_MissingAccount(t *testing.T) {
+	cmd := RootCmd()
+	cmd.SetArgs([]string{"digest"})
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	err := cmd.Execute()
+	// digest without account uses last-used account (not an error if accounts exist)
+	if err != nil {
+		t.Errorf("digest without account should use last-used, got error: %v", err)
+	}
+}
+
+func TestDigestCommand_InvalidFlag(t *testing.T) {
+	cmd := RootCmd()
+	cmd.SetArgs([]string{"digest", "--nonexistent-flag"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Error("expected error for invalid flag")
+	}
+}

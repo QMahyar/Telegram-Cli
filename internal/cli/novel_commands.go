@@ -101,11 +101,14 @@ func newNovelBroadcastCmd(flags *rootFlags) *cobra.Command {
 			if scheduledAt != "" {
 				status = "scheduled"
 			}
-			res, _ := s.DB().ExecContext(ctx,
-				`INSERT INTO tg_jobs (kind, status, accounts_csv, targets_csv, text, media_path, at) VALUES ('broadcast', ?, ?, ?, ?, ?, ?)`,
-				status, alias, targets, text, mediaPath, scheduledAt,
-			)
-			jobID, _ := res.LastInsertId()
+		res, err := s.DB().ExecContext(ctx,
+			`INSERT INTO tg_jobs (kind, status, accounts_csv, targets_csv, text, media_path, at) VALUES ('broadcast', ?, ?, ?, ?, ?, ?)`,
+			status, alias, targets, text, mediaPath, scheduledAt,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to record job: %w", err)
+		}
+		jobID, _ := res.LastInsertId()
 
 			// If scheduled, record the job and return immediately.
 			if scheduledAt != "" {
@@ -976,9 +979,6 @@ func newNovelDigestCmd(flags *rootFlags) *cobra.Command {
 				 LEFT JOIN tg_dialogs d ON d.account = m.account AND d.peer_type = m.peer_type AND d.peer_id = m.peer_id
 				 WHERE m.date > ?`+strings.ReplaceAll(acctWhere, "account", "m.account")+` GROUP BY m.account, title ORDER BY cnt DESC LIMIT 20`,
 				append([]any{window.Unix()}, acctArgs...)[0:]...)
-			if err != nil {
-				return err
-			}
 			if err != nil {
 				return err
 			}

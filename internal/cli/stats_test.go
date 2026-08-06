@@ -29,3 +29,25 @@ func TestNovelStatsHelpWires(t *testing.T) {
 		}
 	}
 }
+
+func TestStatsCommand_MissingAccount(t *testing.T) {
+	cmd := RootCmd()
+	cmd.SetArgs([]string{"stats"})
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	err := cmd.Execute()
+	// stats without account uses last-used account (not an error if accounts exist)
+	if err != nil {
+		t.Errorf("stats without account should use last-used, got error: %v", err)
+	}
+}
+
+func TestStatsCommand_InvalidFlag(t *testing.T) {
+	cmd := RootCmd()
+	cmd.SetArgs([]string{"stats", "--nonexistent-flag"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Error("expected error for invalid flag")
+	}
+}
